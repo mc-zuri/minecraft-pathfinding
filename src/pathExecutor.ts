@@ -49,6 +49,9 @@ export const NO_PROGRESS_DIST = 0.25
 /** physics ticks one movement tick may go on over (runSync) before the walk fails */
 export const MAX_TICK_IN_FLIGHT = 100
 
+/** horizontal speed (blocks a tick) under which a bot that let go of the keys in its goal counts as stopped */
+const ARRIVE_STOP_SPEED = 0.03
+
 /** ticks the bot may take to walk the rest of the way onto the path's last block */
 const MAX_ARRIVE_TICKS = 40
 
@@ -430,13 +433,21 @@ export class PathExecutor {
             const pos = bot.entity.position
             const node = { x: Math.floor(pos.x), y: Math.floor(pos.y + 1e-6), z: Math.floor(pos.z) }
             const left = last != null ? Math.hypot(last.exitPos.x - pos.x, last.exitPos.z - pos.z) : 0
-            if (last == null || goal.isEnd(node as Move) || arriveTicks >= MAX_ARRIVE_TICKS || left > 2) {
+            const speed = Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z)
+            const there = goal.isEnd(node as Move)
+            // in the goal, the keys let go and the bot stopped there (the ground's friction, a few ticks: the
+            // momentum of a run in carried it off the goal's block after the walk ended on it)
+            if (last == null || (there && (speed < ARRIVE_STOP_SPEED || !bot.entity.onGround)) || arriveTicks >= MAX_ARRIVE_TICKS || left > 2) {
               bot.clearControlStates()
               log(`execution ${myExecutionId} completed at ${bot.entity.position}`)
               await finish()
               return
             }
             arriveTicks++
+            if (there) {
+              bot.clearControlStates()
+              return
+            }
             if (bot.entity.onGround || (bot.entity as any).isInWater === true) {
               void bot.look(Math.atan2(-(last.exitPos.x - pos.x), -(last.exitPos.z - pos.z)), bot.entity.pitch, true)
               bot.setControlState('sprint', false)

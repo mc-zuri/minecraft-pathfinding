@@ -55,7 +55,7 @@ test('moves that keep failing at one place end goto with an error', async () => 
   }
 })
 
-test('a move that holds the bot still fails after NO_PROGRESS_TICKS, and the next search goes round it', async () => {
+test('a move that holds the bot still fails after NO_PROGRESS_TICKS, the next search goes round it, and goto ends with the bot stopped in the goal (the diagonal run in left it off the goal block)', async () => {
   const { NO_PROGRESS_TICKS } = await import('../src/pathExecutor')
   const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
   rig.bot.loadPlugin(createPlugin({ optimizers: new Map() } as any))
@@ -77,7 +77,8 @@ test('a move that holds the bot still fails after NO_PROGRESS_TICKS, and the nex
     const goal = new goals.GoalBlock(4, 64, 0)
     await withTimeout(rig.bot.pathfinder.goto(goal), 30000, 'goto timed out')
     const at = rig.bot.entity.position
-    assert.ok(Math.hypot(at.x - 4.5, at.z - 0.5) < 1, `ended at ${at}`)
+    // in the goal's block and stopped there: the diagonal run in doesn't carry it off after goto (the arrive's stop)
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
     assert.deepEqual([...rig.bot.pathfinder.failedMoves], ['Forward:1,64,0>2,64,0'])
     assert.ok(held >= NO_PROGRESS_TICKS && held < 3 * NO_PROGRESS_TICKS, `held ${held} ticks`)
   } finally {
