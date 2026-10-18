@@ -79,6 +79,25 @@ test('getPathTo succeeds on an unobstructed flat path', async () => {
   }
 })
 
+test('goto resolves when the bot already stands at the goal (an empty path)', async () => {
+  const rig = preparePathRig()
+
+  try {
+    // in the middle of its block
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const start = rig.bot.entity.position.floored()
+    const result = await collectPathResult(rig.bot, new goals.GoalBlock(start.x, start.y, start.z))
+    assert.equal(result.status, 'success')
+    assert.equal(result.path.length, 0)
+
+    await withTimeout(rig.bot.pathfinder.goto(new goals.GoalBlock(start.x, start.y, start.z)), 5000, 'goto to the block the bot stands in timed out')
+    await withTimeout(rig.bot.pathfinder.goto(new goals.GoalNear(start.x, start.y, start.z, 1)), 5000, 'goto near the bot timed out')
+    assert.deepEqual(rig.bot.entity.position.floored().toArray(), start.toArray())
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
 test('getPathTo succeeds when it needs a one-block tower and the bot has a block to place', async () => {
   const rig = preparePathRig({
     inventoryItems: (mcData) => [{ type: mcData.itemsByName.dirt.id, count: 2, name: 'dirt' }]
