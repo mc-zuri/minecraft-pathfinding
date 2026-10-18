@@ -99,6 +99,9 @@ export class PathExecutor {
     this.currentExecutor = executor
   }
 
+  /** what the last move that failed (CancelError) failed with */
+  public lastMoveError?: string
+
   public getResetReason (): ResetReason | undefined {
     return this.resetReason
   }
@@ -229,6 +232,7 @@ export class PathExecutor {
     // recovery that did instead threw at once ('Too many failures', MAX_RECOVERY_DEPTH 0) and failed the goto.
     const moveFailed = (err: unknown): void => {
       log(`move failed, searching again: ${String(err)}`)
+      this.lastMoveError = err instanceof Error ? err.message : String(err)
       this.setResetReason('moveFailed')
     }
 

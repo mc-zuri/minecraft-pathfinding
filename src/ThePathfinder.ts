@@ -814,7 +814,7 @@ export class ThePathfinder {
       this.moveFailures = 1
     }
     if (this.moveFailures > ThePathfinder.MAX_MOVE_FAILURES) {
-      throw new Error(`Goto: ${this.moveFailures} moves in a row failed at ${pos.toString()}`)
+      throw new Error(`Goto: ${this.moveFailures} moves in a row failed at ${pos.toString()} (the last: ${this.executionRunner.lastMoveError ?? 'unknown'})`)
     }
     // the search starts where the bot stands: on the ground (or in water), not on the way down from a missed jump
     this.bot.clearControlStates()

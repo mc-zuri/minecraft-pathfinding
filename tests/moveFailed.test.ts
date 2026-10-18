@@ -48,7 +48,7 @@ test('a move that fails has goto search again from where the bot is, and go on t
 test('moves that keep failing at one place end goto with an error', async () => {
   const rig = rigFailing(() => true)
   try {
-    await assert.rejects(withTimeout(rig.bot.pathfinder.goto(new goals.GoalBlock(8, 64, 0)), 20000, 'goto timed out'), /moves in a row failed/)
+    await assert.rejects(withTimeout(rig.bot.pathfinder.goto(new goals.GoalBlock(8, 64, 0)), 20000, 'goto timed out'), /moves in a row failed at .* \(the last: Movement canceled: the test's move failed\)/)
   } finally {
     rig.stopPassivePhysics()
   }
