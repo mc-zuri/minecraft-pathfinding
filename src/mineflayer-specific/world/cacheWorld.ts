@@ -115,6 +115,12 @@ export class BlockInfo {
     })
 
     BlockInfo.blocksToAvoid.add(registry.blocksByName.fire.id)
+    // the rest of what hurts to stand in: soul fire, powder snow (a player sinks in and freezes: PowderSnowBlock), berry
+    // bushes and wither roses
+    for (const name of ['soul_fire', 'powder_snow', 'sweet_berry_bush', 'wither_rose']) {
+      const id = registry.blocksByName[name]?.id
+      if (id != null) BlockInfo.blocksToAvoid.add(id)
+    }
 
     // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     if (registry.blocksByName.cobweb) BlockInfo.blocksToAvoid.add(registry.blocksByName.cobweb.id)

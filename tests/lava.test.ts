@@ -31,6 +31,19 @@ test('lava, fire and cobwebs are neither walked through nor safe (BlockInfo.bloc
   }
 })
 
+test('powder snow, soul fire, berry bushes and wither roses are kept out of too (1.20.4 has them all)', () => {
+  const { world, rig } = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 0.5))
+  try {
+    for (const name of ['powder_snow', 'soul_fire', 'sweet_berry_bush', 'wither_rose']) {
+      const info = BlockInfo.fromBlock(world.setBlock(new Vec3(2, 64, 2), name) as any)
+      assert.equal(info.walkthrough, false, `${name} walkthrough`)
+      assert.equal(info.safe, false, `${name} safe`)
+    }
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
 test('a path goes round a lava pool, not through it', async () => {
   const { world, rig } = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 0.5))
   try {
