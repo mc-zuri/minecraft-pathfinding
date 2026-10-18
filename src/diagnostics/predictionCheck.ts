@@ -117,6 +117,14 @@ function key (x: number, y: number, z: number): string {
   return `${x},${y},${z}`
 }
 
+/** a dig's face: mineflayer's targetDigFace is prismarine-world's BlockFace number (0 bottom, 1 top, 2 north ...) */
+const DIG_FACES = ['bottom', 'top', 'north', 'south', 'west', 'east']
+function digFace (face: unknown): string | XYZ | null {
+  if (typeof face === 'number') return DIG_FACES[face] ?? String(face)
+  if (face instanceof Vec3) return xyz(face)
+  return null
+}
+
 const CONTROL_NAMES = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'] as const
 
 export function controlsString (c: { [K in typeof CONTROL_NAMES[number]]: boolean }): string {
@@ -405,7 +413,7 @@ export class PredictionCheck {
     }
     if (digKey !== this.lastDig) {
       if (this.lastDig != null) this.recordEvent('dig_end', { pos: this.lastDig.split(',').map(Number) })
-      if (dig != null) this.recordEvent('dig_start', { pos: xyz(dig), block: bot.targetDigBlock?.name ?? null, face: bot.targetDigFace != null ? xyz(bot.targetDigFace) : null })
+      if (dig != null) this.recordEvent('dig_start', { pos: xyz(dig), block: bot.targetDigBlock?.name ?? null, face: digFace(bot.targetDigFace) })
       this.lastDig = digKey
     }
     const interaction = this.opts.interaction?.()

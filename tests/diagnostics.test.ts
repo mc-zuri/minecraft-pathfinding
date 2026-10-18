@@ -189,3 +189,24 @@ test('a goto on flat ground has the check on while it walks, with no mismatch, a
     rig.stopPassivePhysics()
   }
 })
+
+test('a dig started and ended is recorded with its block and face (mineflayer\'s targetDigFace is a BlockFace number)', async () => {
+  const { rig, world } = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0))
+  const bot = rig.bot as any
+  bot.entity.position = new Vec3(0.5, 64, 0.5)
+  const check = new PredictionCheck(bot)
+  check.alwaysOn = true
+  try {
+    await ticks(bot, 2)
+    bot.targetDigBlock = world.getBlock(new Vec3(1, 63, 0))
+    bot.targetDigFace = 1
+    await ticks(bot, 2)
+    bot.targetDigBlock = null
+    await ticks(bot, 2)
+    const digs = check.events.toArray().filter((e) => e.type.startsWith('dig_')).map((e) => ({ type: e.type, pos: e.pos, face: e.face }))
+    assert.deepEqual(digs, [{ type: 'dig_start', pos: [1, 63, 0], face: 'top' }, { type: 'dig_end', pos: [1, 63, 0], face: undefined }])
+  } finally {
+    check.detach()
+    rig.stopPassivePhysics()
+  }
+})
