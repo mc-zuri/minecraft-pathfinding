@@ -25,6 +25,19 @@ export abstract class MovementProvider extends Movement {
 
   abstract movementDirs: Vec3[]
 
+  /**
+   * Whether a fall into the column dx, dz off the node, from the node's level, is one to live through: ground (or
+   * water) within maxDropDown blocks under it (LivingEntity.causeFallDamage: a fall over 3 blocks hurts). Checked for
+   * the gap a parkour jump crosses: a jump that falls short lands there.
+   */
+  protected fallSafe (node: Move, dx: number, dz: number): boolean {
+    for (let dy = -1; dy >= -(this.settings.maxDropDown + 1); dy--) {
+      const info = this.getBlockInfo(node, dx, dy, dz)
+      if (info.physical || info.liquid) return !BlockInfo.blocksToAvoid.has(info.type)
+    }
+    return false
+  }
+
   private boundaries!: [x: number, z: number, y: number]
   // private halfway!: [x: number, z: number, y: number]
   private orgX = 0

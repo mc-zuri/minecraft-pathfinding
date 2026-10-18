@@ -249,8 +249,11 @@ test('a diagonal parkour jump is planned only when the box\'s way across is clea
     const rig = preparePathRig({ moveSettings: { canDig: false, canPlace: false } })
     const world = (rig.bot as any).world
     try {
-      // two one-block pillars in a pit too deep to drop into: the start (0, 0) and the landing (2, 2)
-      for (let x = -4; x <= 6; x++) for (let z = -4; z <= 6; z++) for (let y = 40; y < 64; y++) world.setBlock(new Vec3(x, y, z), 'air')
+      // two pillars three blocks over a pit's floor: the start (0, 0) and the landing (2, 2)
+      // (with a floor 3 down: a jump that fell short there is lived through, so the jump is planned at all)
+      for (let x = -4; x <= 6; x++) for (let z = -4; z <= 6; z++) { world.setBlock(new Vec3(x, 63, z), 'air'); world.setBlock(new Vec3(x, 60, z), 'stone') }
+      for (let x = -4; x <= 6; x++) for (let z = -4; z <= 6; z++) for (let y = 61; y < 63; y++) if (!(x === 0 && z === 0) && !(x === 2 && z === 2)) world.setBlock(new Vec3(x, y, z), 'air')
+      for (const [px, pz] of [[0, 0], [2, 2]]) for (let y = 61; y < 64; y++) world.setBlock(new Vec3(px, y, pz), 'stone')
       world.setBlock(new Vec3(0, 63, 0), 'stone')
       world.setBlock(new Vec3(2, 63, 2), 'stone')
       // a block standing beside the line from one to the other, at the corner (2, 1) of the jump
@@ -261,6 +264,31 @@ test('a diagonal parkour jump is planned only when the box\'s way across is clea
       const jumps = final.result.path.filter((m: any) => m.moveType.constructor.name === 'ParkourDiagonal' && m.x === 2 && m.z === 2)
       if (blocked) assert.equal(jumps.length, 0, 'planned the jump past the block')
       else assert.equal(jumps.length, 1, `no jump: ${final.result.status}`)
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  }
+})
+
+test('a parkour jump is planned only over a gap a fall into is lived through: ground within maxDropDown under it, not a ravine', async () => {
+  for (const depth of [3, 30]) {
+    const rig = preparePathRig({ moveSettings: { canDig: false, canPlace: false } })
+    const world = (rig.bot as any).world
+    try {
+      // a gap two blocks wide across the way (x 1 and 2), `depth` deep (too deep to climb out of), 60 blocks to either side
+      for (let x = 1; x <= 2; x++) {
+        for (let z = -60; z <= 60; z++) {
+          // (the flat world is one layer of stone at y 63, nothing under it: the gap's floor is put in)
+          world.setBlock(new Vec3(x, 63, z), 'air')
+          if (depth < 30) world.setBlock(new Vec3(x, 63 - depth, z), 'stone')
+        }
+      }
+      rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+      let final: any
+      await withTimeout((async () => { for await (const res of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(4, 64, 0))) final = res })(), 15000, 'planning timed out')
+      const jumps = final.result.path.filter((m: any) => m.moveType.constructor.name.startsWith('Parkour'))
+      if (depth > 4) assert.equal(jumps.length, 0, `planned ${jumps.length} jumps over a ${depth} deep gap`)
+      else assert.ok(jumps.length > 0, `no jump over a ${depth} deep gap: ${final.result.path.map((m: any) => m.moveType.constructor.name).join(' ')}`)
     } finally {
       rig.stopPassivePhysics()
     }

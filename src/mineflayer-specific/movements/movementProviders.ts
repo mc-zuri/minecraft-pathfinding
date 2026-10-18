@@ -483,6 +483,8 @@ export class ParkourForward extends MovementProvider {
       let cost = cost0 + this.travelCost(d) // jump plus sprinting across d blocks
       const dx = dir.x * d
       const dz = dir.z * d
+      // the gap's columns: a jump that falls short lands in them (a ravine under a gap is a fall to die of)
+      if (!this.fallSafe(node, dir.x * (d - 1), dir.z * (d - 1))) return
 
       const flag0 = /* true */ !closed.has(`${node.x + dx},${node.y - 1},${node.z + dz}`)
       const flag1 = /* true */ !closed.has(`${node.x + dx},${node.y},${node.z + dz}`)
@@ -593,6 +595,18 @@ export class ParkourDiagonal extends MovementProvider {
    * without its feet or head cells meeting a block: the cells the line's box crosses on the way, past the ones
    * checked one by one (the jump's corners beside the line, as (2, 1) and (1, 2) on a jump two over and two along).
    */
+  /** every column the jump's line crosses between its blocks has ground (or water) a safe fall below (fallSafe) */
+  private gapFallSafe (node: Move, dx: number, dz: number): boolean {
+    const steps = Math.ceil(Math.hypot(dx, dz) / 0.25)
+    for (let s = 1; s < steps; s++) {
+      const x = Math.floor(0.5 + (dx * s) / steps)
+      const z = Math.floor(0.5 + (dz * s) / steps)
+      if ((x === 0 && z === 0) || (x === dx && z === dz)) continue
+      if (!this.fallSafe(node, x, z)) return false
+    }
+    return true
+  }
+
   private sweepClear (node: Move, dx: number, dz: number): boolean {
     const steps = Math.ceil(Math.hypot(dx, dz) / 0.1)
     const hW = 0.3
@@ -652,6 +666,7 @@ export class ParkourDiagonal extends MovementProvider {
     if (!this.getBlockInfo(node, dx, 1, 0).walkthrough) return false
     if (!this.getBlockInfo(node, 0, 1, dz).walkthrough) return false
     if (!this.sweepClear(node, dx, dz)) return false
+    if (!this.gapFallSafe(node, dx, dz)) return false
 
     const blockE = this.getBlockInfo(node, dx, -2, dz)
 
