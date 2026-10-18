@@ -454,6 +454,10 @@ export class CacheSyncWorld implements WorldType {
 
     this.world = referenceWorld
 
+    // a new level (a portal, the End's exit, a respawn in another dimension): mineflayer unloads the old level's
+    // columns into the same world without a blockUpdate for each block, so what's cached is another level's
+    bot.on('worldSwitch' as any, () => this.clearCache())
+
     referenceWorld.on('blockUpdate', (oldBlock: Block, newBlock: Block) => {
       // console.log(newBlock.position)
       const pos = newBlock.position
