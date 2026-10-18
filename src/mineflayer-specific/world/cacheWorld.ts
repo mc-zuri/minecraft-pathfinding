@@ -30,6 +30,8 @@ export class BlockInfo {
   static readonly emptyBlocks = new Set()
   static readonly scaffoldingBlockItems = new Set<number>()
   static readonly mlgItems = new Set<number>()
+  /** ice that turns to water when broken over a liquid or a solid block (IceBlock.playerDestroy: meltsInto) */
+  static readonly meltingIce = new Set<number>()
 
   static readonly INVALID: BlockInfo = new BlockInfo(false, false, false, false, false, false, false, 0, false, new Vec3(0, 0, 0), -1)
   static PBlock: BlockType
@@ -114,6 +116,10 @@ export class BlockInfo {
       BlockInfo.blocksCantBreak.add(block.id)
     })
 
+    for (const name of ['ice', 'frosted_ice']) {
+      const id = registry.blocksByName[name]?.id
+      if (id != null) BlockInfo.meltingIce.add(id)
+    }
     BlockInfo.blocksToAvoid.add(registry.blocksByName.fire.id)
     // the rest of what hurts to stand in: soul fire, powder snow (a player sinks in and freezes: PowderSnowBlock), berry
     // bushes and wither roses
@@ -401,6 +407,13 @@ export class BlockInfo {
         else if (movement.getBlockInfo(this.position, 1, 0, 0).liquid) this._waterAround = true
         else if (movement.getBlockInfo(this.position, 0, 0, -1).liquid) this._waterAround = true
         else if (movement.getBlockInfo(this.position, 0, 0, 1).liquid) this._waterAround = true
+        // ice broken over water or the ground is water itself (IceBlock.playerDestroy: when the block below blocks
+        // motion or is a liquid): a path under a frozen sea breaks its way along at head height and floods the cells
+        // it walks, the ice keeping the bot under (a player drowned so on 26.3)
+        else if (BlockInfo.meltingIce.has(this.type)) {
+          const below = movement.getBlockInfo(this.position, 0, -1, 0)
+          if (below.liquid || below.physical) this._waterAround = true
+        }
       }
 
       if (movement.settings.dontMineUnderFallingBlock) {
