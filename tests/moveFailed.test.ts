@@ -85,3 +85,34 @@ test('a move that holds the bot still fails after NO_PROGRESS_TICKS, the next se
     rig.stopPassivePhysics()
   }
 })
+
+test('a move that goes on and on without getting there (backing up for a jump and walking up to it again) fails after MOVE_TICKS_FACTOR times its cost', async () => {
+  const { MIN_MOVE_TICKS } = await import('../src/pathExecutor')
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin({ optimizers: new Map() } as any))
+  let dithered = 0
+  class DitherForwardExecutor extends NewForwardExecutor {
+    async align (thisMove: any, tickCount: number, goal: any): Promise<boolean> {
+      if (Math.floor(thisMove.exitPos.x) === 2 && Math.floor(thisMove.exitPos.z) === 0) {
+        dithered++
+        // back and forth along x, a block's length each way, never onto the move's block
+        rig.bot.clearControlStates()
+        void rig.bot.look(-Math.PI / 2, 0, true)
+        rig.bot.setControlState(Math.floor(dithered / 10) % 2 === 0 ? 'back' : 'forward', true)
+        return false
+      }
+      return await super.align(thisMove, tickCount, goal)
+    }
+  }
+  rig.bot.pathfinder.setExecutor(Forward, DitherForwardExecutor)
+  rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+  try {
+    const goal = new goals.GoalNear(4, 64, 0, 1)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 40000, 'goto timed out')
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
+    assert.ok(dithered >= MIN_MOVE_TICKS && dithered < 3 * MIN_MOVE_TICKS, `dithered ${dithered} ticks`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

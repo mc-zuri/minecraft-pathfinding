@@ -46,6 +46,10 @@ type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform' | 'arrive'
 export const NO_PROGRESS_TICKS = 60
 export const NO_PROGRESS_DIST = 0.25
 
+/** a move's ticks (no dig or place under way) before it fails: this many times its cost, and at least MIN_MOVE_TICKS */
+export const MOVE_TICKS_FACTOR = 5
+export const MIN_MOVE_TICKS = 100
+
 /** physics ticks one movement tick may go on over (runSync) before the walk fails */
 export const MAX_TICK_IN_FLIGHT = 100
 
@@ -205,11 +209,19 @@ export class PathExecutor {
     // where the bot was when the current move last got it anywhere, and the ticks since
     let progressPos = bot.entity.position.clone()
     let stillTicks = 0
+    // the ticks the current move has run with no dig or place under way
+    let moveTicks = 0
     // A move that holds the bot in one place (a jump it never lines up for, a corner it presses into) fails after
     // NO_PROGRESS_TICKS, so that goto searches again without it; a dig or a place under way is progress.
-    const checkProgress = (executor: MovementExecutor): void => {
+    const checkProgress = (executor: MovementExecutor, move: Move): void => {
       const pos = bot.entity.position
-      if (pos.distanceTo(progressPos) > NO_PROGRESS_DIST || executor.cI != null || (bot as any).targetDigBlock != null) {
+      const interacting = executor.cI != null || (bot as any).targetDigBlock != null
+      // a move that goes on and on (a jump it backs up for and walks up to again and again) fails too, after
+      // MOVE_TICKS_FACTOR times its cost in ticks
+      if (!interacting && ++moveTicks > Math.max(MIN_MOVE_TICKS, MOVE_TICKS_FACTOR * move.cost)) {
+        throw new CancelError(`${move.moveType.constructor.name} took over ${moveTicks - 1} ticks`)
+      }
+      if (pos.distanceTo(progressPos) > NO_PROGRESS_DIST || interacting) {
         progressPos = pos.clone()
         stillTicks = 0
         return
@@ -381,6 +393,7 @@ export class PathExecutor {
         tickCount = 0
         progressPos = bot.entity.position.clone()
         stillTicks = 0
+        moveTicks = 0
 
         await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot())
         executor.loadMove(move)
@@ -469,7 +482,7 @@ export class PathExecutor {
 
           if (runnerStage === 'align') {
             this.check()
-            checkProgress(executor)
+            checkProgress(executor, move)
 
             const aligned = await this.timeAsync(
               `align ${move.moveType.constructor.name}`,
@@ -510,7 +523,7 @@ export class PathExecutor {
 
           if (runnerStage === 'perform') {
             this.check()
-            checkProgress(executor)
+            checkProgress(executor, move)
 
             const adding = await this.timeAsync(
               `performPerTick ${move.moveType.constructor.name}`,
