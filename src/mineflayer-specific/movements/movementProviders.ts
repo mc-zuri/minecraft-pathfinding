@@ -588,6 +588,31 @@ export class ParkourDiagonal extends MovementProvider {
     }
   }
 
+  /**
+   * Whether the player's box (0.6 wide) goes from the middle of the node's block to the middle of the one dx, dz off
+   * without its feet or head cells meeting a block: the cells the line's box crosses on the way, past the ones
+   * checked one by one (the jump's corners beside the line, as (2, 1) and (1, 2) on a jump two over and two along).
+   */
+  private sweepClear (node: Move, dx: number, dz: number): boolean {
+    const steps = Math.ceil(Math.hypot(dx, dz) / 0.1)
+    const hW = 0.3
+    const seen = new Set<string>()
+    for (let s = 1; s < steps; s++) {
+      const cx = 0.5 + (dx * s) / steps
+      const cz = 0.5 + (dz * s) / steps
+      for (let x = Math.floor(cx - hW); x <= Math.floor(cx + hW); x++) {
+        for (let z = Math.floor(cz - hW); z <= Math.floor(cz + hW); z++) {
+          if ((x === 0 && z === 0) || (x === dx && z === dz)) continue
+          const key = `${x},${z}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          if (!this.getBlockInfo(node, x, 0, z).walkthrough || !this.getBlockInfo(node, x, 1, z).walkthrough) return false
+        }
+      }
+    }
+    return true
+  }
+
   private tryDiagonalLanding (
     node: Move,
     dir: Vec3,
@@ -626,6 +651,7 @@ export class ParkourDiagonal extends MovementProvider {
     if (!this.getBlockInfo(node, 0, 0, dz).walkthrough) return false
     if (!this.getBlockInfo(node, dx, 1, 0).walkthrough) return false
     if (!this.getBlockInfo(node, 0, 1, dz).walkthrough) return false
+    if (!this.sweepClear(node, dx, dz)) return false
 
     const blockE = this.getBlockInfo(node, dx, -2, dz)
 

@@ -243,3 +243,26 @@ test('a dig by hand that takes longer than 5 s of wall clock (stone, 150 ticks) 
     rig.stopPassivePhysics()
   }
 })
+
+test('a diagonal parkour jump is planned only when the box\'s way across is clear: not past a block at the corner beside the line', async () => {
+  for (const blocked of [false, true]) {
+    const rig = preparePathRig({ moveSettings: { canDig: false, canPlace: false } })
+    const world = (rig.bot as any).world
+    try {
+      // two one-block pillars in a pit too deep to drop into: the start (0, 0) and the landing (2, 2)
+      for (let x = -4; x <= 6; x++) for (let z = -4; z <= 6; z++) for (let y = 40; y < 64; y++) world.setBlock(new Vec3(x, y, z), 'air')
+      world.setBlock(new Vec3(0, 63, 0), 'stone')
+      world.setBlock(new Vec3(2, 63, 2), 'stone')
+      // a block standing beside the line from one to the other, at the corner (2, 1) of the jump
+      if (blocked) for (let y = 62; y <= 65; y++) world.setBlock(new Vec3(2, y, 1), 'stone')
+      rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+      let final: any
+      await withTimeout((async () => { for await (const res of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(2, 64, 2))) final = res })(), 15000, 'planning timed out')
+      const jumps = final.result.path.filter((m: any) => m.moveType.constructor.name === 'ParkourDiagonal' && m.x === 2 && m.z === 2)
+      if (blocked) assert.equal(jumps.length, 0, 'planned the jump past the block')
+      else assert.equal(jumps.length, 1, `no jump: ${final.result.status}`)
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  }
+})
