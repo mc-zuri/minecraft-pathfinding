@@ -98,6 +98,21 @@ test('goto resolves when the bot already stands at the goal (an empty path)', as
   }
 })
 
+test('goto ends with the bot where the goal holds, not short of its last block', async () => {
+  for (const [x, z] of [[3, -2], [4, 3], [-3, -3], [5, 0]]) {
+    const rig = preparePathRig()
+    try {
+      rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+      const goal = new goals.GoalBlock(x, 64, z)
+      await withTimeout(rig.bot.pathfinder.goto(goal), 15000, `goto to ${x}, ${z} timed out`)
+      const at = rig.bot.entity.position
+      assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `goto to ${x}, 64, ${z} ended at ${at}`)
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  }
+})
+
 test('getPathTo succeeds when it needs a one-block tower and the bot has a block to place', async () => {
   const rig = preparePathRig({
     inventoryItems: (mcData) => [{ type: mcData.itemsByName.dirt.id, count: 2, name: 'dirt' }]

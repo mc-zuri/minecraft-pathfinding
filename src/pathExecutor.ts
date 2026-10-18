@@ -36,7 +36,10 @@ export interface PathfinderExecutionHost {
   getPathFromToRaw: (startPos: Vec3, startVel: Vec3, goal: goals.Goal) => Promise<Path | null>
 }
 
-type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform'
+type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform' | 'arrive'
+
+/** ticks the bot may take to walk the rest of the way onto the path's last block */
+const MAX_ARRIVE_TICKS = 40
 
 const MAX_TASK_TIME_MS = 40
 
@@ -199,6 +202,7 @@ export class PathExecutor {
     let pendingOptimize: Promise<void> | undefined
     let pendingInit: Promise<void> | undefined
     let tickCount = 0
+    let arriveTicks = 0
     let settled = false
     let recoveryInFlight = false
 
@@ -380,13 +384,36 @@ export class PathExecutor {
             const hasWork = await prepareNextMove()
             if (!hasWork) {
               if (pendingOptimize == null) {
-                log(`execution ${myExecutionId} completed at ${bot.entity.position}`)
-                await finish()
-                return
+                runnerStage = 'arrive'
+                arriveTicks = 0
+                continue
               }
               return
             }
             continue
+          }
+
+          if (runnerStage === 'arrive') {
+            // A move ends once the bot is on its way over the last block (MovementExecutor.isComplete), so that the next
+            // move takes over without a stop. After the last one nothing does: the bot walks the rest of the way, till
+            // the goal holds at the block it stands in.
+            const last = localPath[localPath.length - 1]
+            const pos = bot.entity.position
+            const node = { x: Math.floor(pos.x), y: Math.floor(pos.y + 1e-6), z: Math.floor(pos.z) }
+            const left = last != null ? Math.hypot(last.exitPos.x - pos.x, last.exitPos.z - pos.z) : 0
+            if (last == null || goal.isEnd(node as Move) || arriveTicks >= MAX_ARRIVE_TICKS || left > 2) {
+              bot.clearControlStates()
+              log(`execution ${myExecutionId} completed at ${bot.entity.position}`)
+              await finish()
+              return
+            }
+            arriveTicks++
+            if (bot.entity.onGround || (bot.entity as any).isInWater === true) {
+              void bot.look(Math.atan2(-(last.exitPos.x - pos.x), -(last.exitPos.z - pos.z)), bot.entity.pitch, true)
+              bot.setControlState('sprint', false)
+              bot.setControlState('forward', left > 0.15)
+            }
+            return
           }
 
           if (runnerStage === 'optimize') {
