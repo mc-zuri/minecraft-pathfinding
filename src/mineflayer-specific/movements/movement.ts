@@ -217,20 +217,30 @@ export abstract class Movement {
     this.currentMove = move
   }
 
+  /**
+   * Whether an interaction of the move is still to be done: not let go of, and its block not yet as the move needs it
+   * (unless it is under way). A block the world has as needed already (a floor placed by an earlier try of the move,
+   * a block another player put there, a leaf that decayed) is done: counted on, the move was never complete, and the
+   * bot stood at its exit with no key held until the no-progress check failed it.
+   */
+  protected stillToDo (handler: InteractHandler): boolean {
+    return !handler.allowExit && (handler.isPerforming || handler.needToPerform(this.bot))
+  }
+
   toBreak (): BreakHandler[] {
-    return this.currentMove.toBreak?.filter((b) => !b.allowExit) ?? []
+    return this.currentMove.toBreak?.filter((b) => this.stillToDo(b)) ?? []
   }
 
   toBreakLen (): number {
-    return this.currentMove.toBreak?.filter((b) => !b.allowExit).length ?? 0
+    return this.toBreak().length
   }
 
   toPlace (): PlaceHandler[] {
-    return this.currentMove.toPlace?.filter((b) => !b.allowExit) ?? []
+    return this.currentMove.toPlace?.filter((b) => this.stillToDo(b)) ?? []
   }
 
   toPlaceLen (): number {
-    return this.currentMove.toPlace?.filter((b) => !b.allowExit).length ?? 0
+    return this.toPlace().length
   }
 
   getBlock (pos: Vec3Properties, dx: number, dy: number, dz: number): Block | null {
