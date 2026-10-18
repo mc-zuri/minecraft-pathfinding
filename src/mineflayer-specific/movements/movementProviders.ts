@@ -55,7 +55,9 @@ export class Forward extends MovementProvider {
     const blockC = this.getBlockInfo(pos, dir.x, 0, dir.z)
     if (blockC.isInvalid) return // out of range.
 
-    if (!blockC.walkthrough) return
+    // a solid block at the feet is broken like the one at the head (safeOrBreak below), as baritone's
+    // MovementTraverse does: a tunnel goes straight on, not up a block and down again (ForwardJump then
+    // StraightDown) one step at a time
 
     const blockB = this.getBlockInfo(pos, dir.x, 1, dir.z)
     const blockD = this.getBlockInfo(pos, dir.x, -1, dir.z)
