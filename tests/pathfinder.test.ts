@@ -165,6 +165,9 @@ test('a parkour jump that lands off its block gives the move up instead of steer
   // the End's ground beside a spike (seed endfight, shifted by 40, 0, 3): a one-block step down along x and a notch,
   // where the plan jumps diagonally from the step's corner over the notch (ParkourDiagonal to 2, 64, 2), aiming at the
   // landing block's near corner, and the drop carries the bot past it
+  // the jump is one over and two along: the planner makes those only when allowed
+  const { ParkourDiagonal } = await import('../src/mineflayer-specific/movements/movementProviders')
+  ParkourDiagonal.allowOffsetDiagonals = true
   const rig = preparePathRig()
   const world = (rig.bot as any).world
   try {
@@ -183,6 +186,7 @@ test('a parkour jump that lands off its block gives the move up instead of steer
     const at = rig.bot.entity.position
     assert.ok(Math.hypot(at.x - 2.5, at.z - 2.5) < 4, `goto left the bot at ${at}, away from the goal`)
   } finally {
+    ParkourDiagonal.allowOffsetDiagonals = false
     rig.stopPassivePhysics()
   }
 })
