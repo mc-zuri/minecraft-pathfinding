@@ -13,7 +13,7 @@ import { MovementOptions } from './movement'
 import { MovementExecutor } from './movementExecutor'
 import type { Block, RayType } from '../../types'
 import { faceToVec, Task } from '../../utils'
-import { handleBlockEvent, waitForSettledBlockPredicate, toBlockPositionEventName, waitForSettledBlockStateAtPosition } from '../../customBlockEvents'
+import { DEFAULT_SETTLE_TICKS, handleBlockEvent, waitForSettledBlockPredicate, toBlockPositionEventName, waitForSettledBlockStateAtPosition } from '../../customBlockEvents'
 
 const debug = require('debug')
 const logBase = debug('minecraft-pathfinding:InteractHandler')
@@ -616,7 +616,7 @@ export class BreakHandler extends InteractHandler {
           bot,
           this.blockInfo.position,
           (block) => block != null && BlockInfo.replaceables.has(block.type),
-          { timeoutMs: 5000, settleMs: 75 }
+          { timeoutMs: 5000, settleTicks: DEFAULT_SETTLE_TICKS }
         )
 
         await this._breakTask

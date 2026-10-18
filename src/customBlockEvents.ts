@@ -189,20 +189,27 @@ export async function waitForBlockEvent<K extends BlockEventName> (
   })
 }
 
+// A block settles after a count of the bot's ticks (physicsTick), not after a time: a block the bot digs or places
+// is the client's prediction until the server's answer, which the server sends from its next tick
+// (ServerGamePacketListenerImpl.handlePlayerAction / handleUseItemOn, then the block update and
+// ClientboundBlockChangedAckPacket). Two client ticks cover that tick at 20 TPS, and under a lockstep server, which
+// sends its tick's packets before the client's next tick, they do whatever the speed the ticks run at.
+export const DEFAULT_SETTLE_TICKS = 2
+
 export interface WaitForSettledBlockPredicateOptions {
   timeoutMs?: number
-  settleMs?: number
+  settleTicks?: number
   signal?: AbortSignal
 }
 
 export interface WaitForSettledBlockUpdateOptions {
   timeoutMs?: number
-  settleMs?: number
+  settleTicks?: number
   signal?: AbortSignal
 }
 
 export interface HandleSettledBlockEventOptions {
-  settleMs?: number
+  settleTicks?: number
   timeoutMs?: number
   signal?: AbortSignal
 }
@@ -219,7 +226,7 @@ interface PositionSettleController<TResult> {
   finishGuard: () => boolean
   position: Vec3
   eventName: BlockPositionEventName
-  settleMs: number
+  settleTicks: number
   bot: Bot
 }
 
@@ -228,7 +235,7 @@ async function waitForPositionSettle<TResult> (
   position: Vec3,
   opts: {
     timeoutMs?: number
-    settleMs?: number
+    settleTicks?: number
     signal?: AbortSignal
     debugLabel: string
     createListener: (
@@ -242,13 +249,13 @@ async function waitForPositionSettle<TResult> (
   const targetPosition = position.floored()
   const eventName = toBlockPositionEventName(targetPosition)
   const timeoutMs = opts.timeoutMs ?? 5000
-  const settleMs = opts.settleMs ?? 75
+  const settleTicks = opts.settleTicks ?? DEFAULT_SETTLE_TICKS
   const signal = opts.signal
 
   return await new Promise<TResult>((resolve, reject) => {
     let finished = false
     let timeoutTimer: NodeJS.Timeout | undefined
-    let settleTimer: NodeJS.Timeout | undefined
+    let settleTickListener: (() => void) | undefined
 
     const succeed = (value: TResult) => {
       if (finished) return
@@ -266,18 +273,28 @@ async function waitForPositionSettle<TResult> (
       reject(err)
     }
 
+    // fn runs on the settleTicks-th physicsTick from now; arming again starts the count again
     const armSettleTimer = (fn: () => void) => {
-      if (settleTimer != null) clearTimeout(settleTimer)
-      settleTimer = setTimeout(() => {
+      cancelSettleTimer()
+      if (settleTicks <= 0) {
+        if (!finished) fn()
+        return
+      }
+      let ticks = 0
+      const onTick = () => {
+        if (++ticks < settleTicks) return
+        cancelSettleTimer()
         if (finished) return
         fn()
-      }, settleMs)
+      }
+      settleTickListener = onTick
+      bot.on('physicsTick', onTick)
     }
 
     const cancelSettleTimer = () => {
-      if (settleTimer != null) {
-        clearTimeout(settleTimer)
-        settleTimer = undefined
+      if (settleTickListener != null) {
+        bot.off('physicsTick', settleTickListener)
+        settleTickListener = undefined
       }
     }
 
@@ -290,7 +307,7 @@ async function waitForPositionSettle<TResult> (
       finishGuard: () => finished,
       position,
       eventName,
-      settleMs,
+      settleTicks,
       bot,
       armSettleTimer,
       cancelSettleTimer
@@ -322,6 +339,7 @@ async function waitForPositionSettle<TResult> (
     // Seed the listener from the current world state so callers do not have to
     // wait for a second update before the settle timer can start.
     baseListener(null, bot.blockAt(targetPosition) ?? null)
+    if (finished) return
 
     if (timeoutMs > 0) {
       timeoutTimer = setTimeout(() => {
@@ -346,19 +364,11 @@ export async function waitForSettledBlockPredicate (
 ): Promise<Block | null> {
   return await waitForPositionSettle<Block | null>(bot, position, {
     timeoutMs: opts.timeoutMs,
-    settleMs: opts.settleMs ?? 500,
+    settleTicks: opts.settleTicks ?? 10,
     signal: opts.signal,
     debugLabel: 'waitForSettledBlockPredicate',
     createListener: (controller) => {
       let candidate: Block | null = null
-
-      const cancel = () => {
-        const settleTimer = (controller as any).settleTimer as NodeJS.Timeout | undefined
-        if (settleTimer != null) {
-          clearTimeout(settleTimer)
-          ;(controller as any).settleTimer = undefined
-        }
-      }
 
       return (_oldBlock, newBlock) => {
         const matches = predicate(newBlock)
@@ -372,7 +382,7 @@ export async function waitForSettledBlockPredicate (
 
         if (matches) {
           candidate = newBlock
-          ;(controller as any).armSettleTimer(() => {
+          ;controller.armSettleTimer(() => {
             debug(
               'settle check %s candidate=%s matches=%s',
               controller.eventName,
@@ -383,7 +393,7 @@ export async function waitForSettledBlockPredicate (
           })
         } else {
           candidate = null
-          cancel()
+          controller.cancelSettleTimer()
         }
       }
     }
@@ -398,18 +408,10 @@ export async function waitForSettledBlockStateAtPosition (
 ): Promise<Block | null> {
   return await waitForPositionSettle<Block | null>(bot, position, {
     timeoutMs: opts.timeoutMs,
-    settleMs: opts.settleMs ?? 75,
+    settleTicks: opts.settleTicks ?? DEFAULT_SETTLE_TICKS,
     signal: opts.signal,
     debugLabel: 'waitForSettledBlockStateAtPosition',
     createListener: (controller) => {
-      const cancel = () => {
-        const settleTimer = (controller as any).settleTimer as NodeJS.Timeout | undefined
-        if (settleTimer != null) {
-          clearTimeout(settleTimer)
-          ;(controller as any).settleTimer = undefined
-        }
-      }
-
       return (_oldBlock, _newBlock) => {
         const current = controller.bot.blockAt(controller.position) ?? null
         const matches = predicate(current)
@@ -422,7 +424,7 @@ export async function waitForSettledBlockStateAtPosition (
         )
 
         if (matches) {
-          ;(controller as any).armSettleTimer(() => {
+          ;controller.armSettleTimer(() => {
             const settled = controller.bot.blockAt(controller.position) ?? null
             const settledMatches = predicate(settled)
 
@@ -438,7 +440,7 @@ export async function waitForSettledBlockStateAtPosition (
             }
           })
         } else {
-          cancel()
+          controller.cancelSettleTimer()
         }
       }
     }
@@ -452,12 +454,12 @@ export async function waitForSettledBlockUpdateAtPosition (
 ): Promise<Block | null> {
   return await waitForPositionSettle<Block | null>(bot, position, {
     timeoutMs: opts.timeoutMs,
-    settleMs: opts.settleMs ?? 75,
+    settleTicks: opts.settleTicks ?? DEFAULT_SETTLE_TICKS,
     signal: opts.signal,
     debugLabel: 'waitForSettledBlockUpdateAtPosition',
     createListener: (controller) => {
       return () => {
-        ;(controller as any).armSettleTimer(() => {
+        ;controller.armSettleTimer(() => {
           const current = controller.bot.blockAt(controller.position) ?? null
           debug(
             'settle check %s current=%s',
@@ -473,7 +475,7 @@ export async function waitForSettledBlockUpdateAtPosition (
 
 /**
  * Listens to global blockUpdate events, but only calls the listener after the
- * affected position has gone quiet for `settleMs`.
+ * affected position has gone quiet for `settleTicks` of the bot's ticks.
  *
  * - Deduplicates concurrent checks per position
  * - Reads the final block from the world before invoking the listener
@@ -499,7 +501,7 @@ export function handleSettledBlockEvent (
     const task = (async () => {
       try {
         const settledBlock = await waitForSettledBlockUpdateAtPosition(bot, position, {
-          settleMs: opts.settleMs,
+          settleTicks: opts.settleTicks,
           timeoutMs: opts.timeoutMs,
           signal: opts.signal
         })

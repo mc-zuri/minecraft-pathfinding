@@ -52,7 +52,7 @@ import { Task } from '@nxg-org/mineflayer-util-plugin'
 import { reconstructPath } from './abstract/algorithms'
 import { closestPointOnLineSegment, getScaffoldCount, getNormalizedPos, getSupportedStartPos } from './utils'
 import { World } from './mineflayer-specific/world/worldInterface'
-import { handleBlockEvent, handleSettledBlockEvent } from './customBlockEvents'
+import { DEFAULT_SETTLE_TICKS, handleBlockEvent, handleSettledBlockEvent } from './customBlockEvents'
 import { PathExecutor, type ExecutionMappings } from './pathExecutor'
 import { start } from 'node:repl'
 
@@ -349,7 +349,8 @@ export class ThePathfinder {
         await this.reset('blockUpdate')
       },
       {
-        settleMs: 75,
+        // the block's update settles over the bot's ticks (DEFAULT_SETTLE_TICKS: the server's next tick), not 75 ms
+        settleTicks: DEFAULT_SETTLE_TICKS,
         timeoutMs: 250
       }
     )
