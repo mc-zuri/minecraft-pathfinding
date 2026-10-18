@@ -242,11 +242,13 @@ export class BlockInfo {
         b
       )
     } else {
+      // no collision box: walked through, unless it's one to keep out of (lava, fire, cobwebs: blocksToAvoid)
+      const safe = !BlockInfo.blocksToAvoid.has(b.type)
       return new BlockInfo(
         BlockInfo.replaceables.has(b.type),
         false,
-        true,
-        true,
+        safe,
+        safe,
         false,
         BlockInfo.liquids.has(b.type) || Boolean((b as any)._properties?.waterlogged),
         false,
