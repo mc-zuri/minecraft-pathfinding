@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, @typescript-eslint/strict-boolean-expressions */
 import { Bot, BotEvents } from 'mineflayer'
-import { digInSight } from '../crosshairDig'
+import { blockReach, digInSight } from '../crosshairDig'
 import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
@@ -573,7 +573,10 @@ export class BreakHandler extends InteractHandler {
   async performInfo (bot: Bot, ticks = 15): Promise<InteractionPerformInfo> {
     const bb = AABB.fromBlock(this.vec)
     const dist = bb.distanceToVec(bot.entity.position.offset(0, 1.62, 0))
-    const reachable = dist < BreakHandler.reach + 5
+    // in the crosshair's reach (the block_interaction_range): digInSight aims at a point of the block within it, and the
+    // bot holds still while it digs (MovementExecutor.digging); from further off it walks on (it started digs 9 blocks
+    // off, which the server refuses past the reach)
+    const reachable = dist < blockReach(bot)
 
     logBreak(`performInfo calculation. Distance: ${dist.toFixed(2)}, Reachable: ${reachable}`)
 

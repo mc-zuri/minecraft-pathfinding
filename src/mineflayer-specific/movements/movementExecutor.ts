@@ -235,6 +235,10 @@ export abstract class MovementExecutor extends Movement {
   public async _performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
     await this.holdUntilAborted(thisMove, this.task)
     this.throwIfInteractionFailed()
+    if (this.digging) {
+      this.holdForDig()
+      return false
+    }
     const done = await this.performPerTick(thisMove, tickCount, currentIndex, path)
     if (done !== true) return done
     if (this.readyForNext(thisMove, currentIndex, path)) return true
@@ -360,6 +364,22 @@ export abstract class MovementExecutor extends Movement {
 
   private boxOverlaps (bb: AABB, cx: number, cz: number, hW: number): boolean {
     return bb.minX < cx + hW && bb.maxX > cx - hW && bb.minZ < cz + hW && bb.maxZ > cz - hW
+  }
+
+  /**
+   * A dig of the move is under way, its block still there: the look is the dig's (digInSight aims the crosshair at a
+   * point of the block in sight and stops the dig when the crosshair leaves it, as vanilla breaks only the block the
+   * crosshair hits). The executor's steering turned the bot along its path at pitch 0 each tick (the optimizer's
+   * diagonal, a block off the line), the dig stopped, and after 8 tries the move failed.
+   */
+  protected get digging (): boolean {
+    const cI = this._cI
+    return cI instanceof BreakHandler && cI.isPerforming && cI.needToPerform(this.bot)
+  }
+
+  /** while the dig is under way the bot stands to mine, as a player does, and its look is left to the dig */
+  protected holdForDig (): void {
+    for (const key of ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const) this.bot.setControlState(key, false)
   }
 
   /** holds the bot on for the middle of the move's block, the way it walks there (no jump, no sprint) */
@@ -703,6 +723,7 @@ export abstract class MovementExecutor extends Movement {
  * but only on the xz plane (pitch is always 0).
  */
   public async lookAtPathPos (vec3: Vec3, force = this.settings.forceLook): Promise<void> {
+    if (this.digging) return // (the dig's look)
     const pos = this.bot.entity.position
     const dx = vec3.x - pos.x
     const dz = vec3.z - pos.z
@@ -713,11 +734,13 @@ export abstract class MovementExecutor extends Movement {
   }
 
   public async look (yaw: number, pitch: number, force = this.settings.forceLook): Promise<void> {
+    if (this.digging) return // (the dig's look)
     if (this.isLookingAtRotation(yaw, pitch, 0.001)) return
     await this.bot.look(yaw, pitch, force)
   }
 
   public async lookAt (vec3: Vec3, force = this.settings.forceLook): Promise<void> {
+    if (this.digging) return // (the dig's look)
     if (this.isLookingAt(vec3, 0.001)) return
     await this.bot.lookAt(vec3, force)
   }
