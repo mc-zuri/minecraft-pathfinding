@@ -161,7 +161,11 @@ export function getSupportedStartPos (world: World, startPos: Vec3): Vec3 {
   }
 
   if (best == null) return pos
-  return new Vec3(best.x, pos.y, best.z)
+  // the bot's own point when it's over the supporting block, else the nearest point in that block's column: the start
+  // node's floor is the support's, and the first move starts where the bot stands, not at the block's corner (a
+  // bot that had to walk to the corner first can't in a 1×1 shaft, and aligned for good)
+  const inside = (v: number, lo: number): number => Math.min(Math.max(v, lo + 0.001), lo + 0.999)
+  return new Vec3(inside(pos.x, best.x), pos.y, inside(pos.z, best.z))
 }
 
 export async function onceWithCleanup<T extends keyof BotEvents> (

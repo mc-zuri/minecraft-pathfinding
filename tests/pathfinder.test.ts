@@ -186,3 +186,44 @@ test('a parkour jump that lands off its block gives the move up instead of steer
     rig.stopPassivePhysics()
   }
 })
+
+test('a path starts where the bot stands: the start is snapped into the supporting block, not to its corner', async () => {
+  const { getSupportedStartPos } = await import('../src/utils')
+  const rig = preparePathRig()
+  try {
+    const world = (rig.bot as any).world
+    const pfWorld = rig.bot.pathfinder.world
+    // over its own block: its own point (it used to be (0, 64, 0), which a bot in a 1x1 shaft walks to for ever)
+    assert.deepEqual(getSupportedStartPos(pfWorld, new Vec3(0.5, 64, 0.5)).toArray(), [0.5, 64, 0.5])
+    assert.deepEqual(getSupportedStartPos(pfWorld, new Vec3(0.9, 64, 0.2)).toArray(), [0.9, 64, 0.2])
+    // over the edge of a hole, held up by the block beside it: the nearest point over that block
+    world.setBlock(new Vec3(1, 63, 0), 'air')
+    const edge = getSupportedStartPos(pfWorld, new Vec3(1.2, 64, 0.5))
+    assert.ok(Math.floor(edge.x) === 0 && edge.x > 0.99 && edge.z === 0.5, edge.toString())
+
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const result: any = await collectPathResult(rig.bot, new goals.GoalBlock(5, 64, 3))
+    assert.equal(result.status, 'success')
+    assert.deepEqual(result.path[0].entryPos.toArray(), [0.5, 64, 0.5])
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
+test('a tunnel through a wall goes straight on: Forward breaks the feet block as well as the head block', async () => {
+  const rig = preparePathRig()
+  const world = (rig.bot as any).world
+  try {
+    // a stone ridge 4 thick and 6 high across the way, nothing to go round it by within reach
+    for (let x = 3; x <= 6; x++) for (let y = 64; y < 70; y++) for (let z = -30; z <= 30; z++) world.setBlock(new Vec3(x, y, z), 'stone')
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    // a goal in the ridge's first column: a tunnel in from this side is the way (round the far side digs as much)
+    const result = await collectPathResult(rig.bot, new goals.GoalBlock(3, 64, 0))
+    assert.equal(result.status, 'success')
+    const kinds = result.path.map(m => m.moveType?.constructor?.name)
+    // it used to climb into the wall and drop again at every block (ForwardJump, StraightDown, ...)
+    assert.deepEqual(kinds, new Array(3).fill('Forward'))
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
