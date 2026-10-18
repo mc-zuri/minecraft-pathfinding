@@ -6,6 +6,7 @@ import * as goals from './mineflayer-specific/goals'
 import { Vec3 } from 'vec3'
 import { Move } from './mineflayer-specific/move'
 import { BlockInfo, CacheSyncWorld } from './mineflayer-specific/world/cacheWorld'
+import { PredictionCheck } from './diagnostics/predictionCheck'
 import { ResetError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveExecutor,
@@ -138,6 +139,12 @@ export class ThePathfinder {
   private _currentProducer?: PathProducer
   private readonly executionRunner: PathExecutor
 
+  /**
+   * The movement check and record (diagnostics/predictionCheck): on while a path executes, each tick against the
+   * physics' prediction on the pathfinder's world, with the last ticks' samples and events for a stuck report
+   */
+  public readonly diagnostics: PredictionCheck
+
   private _gotoMappings?: {
     movements: ExecutorMap
     optimizers: OptimizationMap
@@ -243,6 +250,13 @@ export class ThePathfinder {
     this.pathfinderSettings = pathfinderSettings
     this.astar = null
     this.executionRunner = new PathExecutor(this.bot, this)
+    this.diagnostics = new PredictionCheck(bot, {
+      world: () => this.world,
+      interaction: () => {
+        const cI = this.currentExecutor?.cI
+        return cI != null ? { type: String(cI.type), pos: cI.vec } : undefined
+      }
+    })
 
     this.setupListeners()
     log('Pathfinder initialized.')

@@ -64,3 +64,7 @@ export { digInSight, aimAt, crosshairBlock, blockReach } from './mineflayer-spec
 export type { DigInSightOptions, CrosshairHit, AimResult } from './mineflayer-specific/crosshairDig'
 
 export * as movementProviders from './mineflayer-specific/movements/movementProviders'
+
+export * as diagnostics from './diagnostics'
+export { PredictionCheck, classifyMismatch } from './diagnostics/predictionCheck'
+export type { MismatchClass, TickSample, DiagEvent, Mismatch } from './diagnostics/predictionCheck'

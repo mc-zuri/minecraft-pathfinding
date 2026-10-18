@@ -693,11 +693,14 @@ export class PathExecutor {
     beginOptimization()
 
     bot.prependListener('physicsTickBegin', moveListener)
+    // the movement check and record, while the path executes
+    const releaseDiagnostics = this.host.diagnostics.acquire()
 
     try {
       await completion
     } finally {
       bot.off('physicsTickBegin', moveListener)
+      releaseDiagnostics()
     }
   }
 
