@@ -5,6 +5,8 @@ import { Vec3 } from 'vec3'
 import { createPlugin, goals } from '../src'
 import { RingBuffer } from '../src/diagnostics/ringBuffer'
 import { PredictionCheck, classifyMismatch, controlsString, type MismatchEvidence } from '../src/diagnostics/predictionCheck'
+import { blocksAround, diffCacheWithWorld, describeBlock } from '../src/diagnostics/pathState'
+import { BlockInfo } from '../src/mineflayer-specific/world/cacheWorld'
 import { createCacheWorld } from './setup'
 
 function withTimeout<T> (promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -60,6 +62,29 @@ test('classifyMismatch takes the packets first, then the blocks changed, then th
   assert.equal(classifyMismatch({ ...none, changedBlocks: [{ own: false }], matchesWithChanges: false, matchesBotWorld: true }), 'cache_stale')
   assert.equal(classifyMismatch({ ...none, matchesBotWorld: false, entitiesNear: 2 }), 'entity_push')
   assert.equal(controlsString({ forward: true, back: false, left: false, right: false, jump: true, sprint: true, sneak: false }), 'forward+jump+sprint')
+})
+
+test('diffCacheWithWorld lists the cached cells whose block the world no longer has', () => {
+  const { world, cacheWorld, rig } = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0))
+  rig.stopPassivePhysics()
+  const stone = new Vec3(2, 64, 0)
+  world.setBlock(stone, 'stone')
+  // the cache reads one cell, and holds stone for the next one, air in the world (as a missed block update)
+  cacheWorld.getBlockInfo(stone)
+  const air = world.getBlock(new Vec3(3, 64, 0))
+  cacheWorld.blockInfos.set('3:64:0', BlockInfo.fromBlock(world.getBlock(stone) as any))
+  const diff = diffCacheWithWorld([stone, new Vec3(3, 64, 0), new Vec3(4, 64, 0)], cacheWorld, (pos) => world.getBlock(pos) as any)
+  assert.equal(diff.cached, 2)
+  assert.equal(diff.disagreements.length, 1)
+  assert.deepEqual(diff.disagreements[0].pos, [3, 64, 0])
+  assert.match(diff.disagreements[0].cache, /^stone#/)
+  assert.equal(diff.disagreements[0].world, describeBlock(air as any))
+
+  const around = blocksAround(new Vec3(2.5, 64, 0.5), 1, (pos) => world.getBlock(pos) as any, cacheWorld)
+  assert.deepEqual(around.origin, [2, 64, 0])
+  assert.equal(around.blocks.length + around.air + around.unloaded, 27)
+  assert.ok(around.blocks.some((b) => b.at.join() === '0,0,0' && b.block.startsWith('stone')), JSON.stringify(around.blocks))
+  assert.deepEqual(around.disagreements.map((d) => d.pos), [[3, 64, 0]])
 })
 
 test('the prediction check finds no mismatch on a clean walk and a jump, and classifies a correction and a stale world', async () => {

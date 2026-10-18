@@ -17,6 +17,7 @@ import type { ResetReason } from './types'
 import { ThePathfinder } from './ThePathfinder'
 import { printBotControls } from './utils'
 import { moveKey } from './mineflayer-specific/movements/movementProvider'
+import { describeMove } from './diagnostics/pathState'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:PathExecutor')
@@ -300,6 +301,10 @@ export class PathExecutor {
       if (failed != null) this.host.failedMoves.add(moveKey(failed))
       this.lastMoveError = err instanceof Error ? err.message : String(err)
       this.setResetReason('moveFailed')
+      // (the stuck report's: the move, where the bot was, and why)
+      const info = { move: failed != null ? describeMove(failed) : null, error: this.lastMoveError, pos: bot.entity.position.clone() }
+      this.host.diagnostics.recordEvent('move_failed', { move: info.move, error: info.error, pos: [info.pos.x, info.pos.y, info.pos.z] })
+      bot.emit('pathfinderMoveFailed', info)
     }
 
     const scheduleRecovery = (rawMove: Move): void => {

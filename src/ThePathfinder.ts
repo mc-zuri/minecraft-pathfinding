@@ -145,6 +145,14 @@ export class ThePathfinder {
    */
   public readonly diagnostics: PredictionCheck
 
+  /** how the last search that found no way ended ('noPath', 'timeout', 'canceled'), at which of the check's ticks */
+  public lastSearch?: { status: string, tick: number }
+
+  /** the error of the last move that failed */
+  public get lastMoveError (): string | undefined {
+    return this.executionRunner.lastMoveError
+  }
+
   private _gotoMappings?: {
     movements: ExecutorMap
     optimizers: OptimizationMap
@@ -656,6 +664,7 @@ export class ThePathfinder {
     this.moveFailures = 0
     delete this.moveFailureAt
     this.failedMoves.clear()
+    delete this.lastSearch
     this.executeTask = new Task()
     this.currentGotoGoal = goal
     this.bot.emit('goalSet', goal)
@@ -716,6 +725,7 @@ export class ThePathfinder {
             const best = goal.heuristic(path[path.length - 1])
             if (!(best < timedOutBest)) {
               log('_goto: the search timed out no nearer the goal (%d, before %d)', best, timedOutBest)
+              this.noteSearchEnd('timeout')
               if (task !== null && res1 !== null) res1.path.length = 0
               return
             }
@@ -740,6 +750,7 @@ export class ThePathfinder {
           if (res.result.status !== 'success') {
             if (res.result.status === 'noPath' || res.result.status === 'timeout' || res.result.status === 'canceled') {
               log('_goto path finding ended early: %s', res.result.status)
+              this.noteSearchEnd(res.result.status)
               if (task !== null && res1 !== null) res1.path.length = 0
               // think I just return? used to break before, but that's wrong.
               return
@@ -813,6 +824,11 @@ export class ThePathfinder {
     } while (doForever && this.resetReason !== 'goalReassignment')
   }
 
+  private noteSearchEnd (status: string): void {
+    this.lastSearch = { status, tick: this.diagnostics.tick }
+    this.diagnostics.recordEvent('search_ended', { status })
+  }
+
   /** the moves (moveKey) that failed in this goto: its searches leave them out */
   public readonly failedMoves = new Set<string>()
 
@@ -833,6 +849,7 @@ export class ThePathfinder {
       this.moveFailures = 1
     }
     if (this.moveFailures > ThePathfinder.MAX_MOVE_FAILURES) {
+      this.diagnostics.recordEvent('goto_gave_up', { pos: [pos.x, pos.y, pos.z], failures: this.moveFailures, lastMoveError: this.executionRunner.lastMoveError ?? null })
       throw new Error(`Goto: ${this.moveFailures} moves in a row failed at ${pos.toString()} (the last: ${this.executionRunner.lastMoveError ?? 'unknown'})`)
     }
     // the search starts where the bot stands: on the ground (or in water), not on the way down from a missed jump

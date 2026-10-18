@@ -560,6 +560,12 @@ export class CacheSyncWorld implements WorldType {
     return this.blockInfos.get(key)!
   }
 
+  /** what the cache holds for the block at `pos`, without reading the world or touching the entry's age */
+  peekBlockInfo (pos: Vec3): BlockInfo | undefined {
+    if (!this.enabled) return undefined
+    return this.blockInfos.peek(`${Math.floor(pos.x)}:${Math.floor(pos.y)}:${Math.floor(pos.z)}`)
+  }
+
   getBlockStateId (pos: Vec3): number | undefined {
     if (!this.enabled) {
       return this.world.getBlockStateId(pos) as unknown as number

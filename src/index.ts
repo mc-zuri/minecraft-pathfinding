@@ -16,6 +16,7 @@ import { Path } from './mineflayer-specific/algs'
 import type { MovementOptions, MovementSetup } from './mineflayer-specific/movements'
 import { MovementProvider } from './mineflayer-specific/movements'
 import type { OptimizationSetup } from './mineflayer-specific/post'
+import type { MoveInfo } from './diagnostics/pathState'
 
 export function createPlugin (opts?: HandlerOpts) {
   return function (bot: Bot) {
@@ -44,6 +45,7 @@ declare module 'mineflayer' {
     goalSet: (goal: goals.Goal) => void
     goalFinished: (goal: goals.Goal) => void
     goalAborted: (goal: goals.Goal) => void
+    pathfinderMoveFailed: (info: { move: MoveInfo | null, error: string, pos: Vec3 }) => void
   }
 }
 
