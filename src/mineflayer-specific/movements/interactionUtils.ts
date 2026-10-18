@@ -129,10 +129,14 @@ export abstract class InteractHandler {
     const ret = await this.perform(bot, item, opts).catch((err) => {
       logBase(`Interaction failed at ${this.vec}: %O`, err)
       this._internalLock = false
-      this._done = true
       this.performing = false
-
-      if (this.task?.canceled != null) return
+      // an interaction the move called off (its task canceled) just ends; one that failed (a dig the server refused,
+      // a place with nothing to place against) fails the move: `canceled != null` held for a task that wasn't
+      // canceled (false), and the failure passed for a success, the block counted as broken, the bot walking into it
+      if ((this.task as any)?.canceled === true) {
+        this._done = true
+        return
+      }
       throw new CancelError(`Failed to perform ${this.constructor.name}`, err)
     })
 

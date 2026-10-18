@@ -183,7 +183,7 @@ export class NewForwardExecutor extends MovementExecutor {
       const test = await this.interactNeeded(5)
       if (test != null) {
         // console.log('performing interaction')
-        void this.performInteraction(test)
+        void this.performInteraction(test).catch(() => {}) // (its failure fails the move: throwIfInteractionFailed)
         return false
       }
     }
@@ -309,7 +309,7 @@ export class ForwardJumpExecutor extends MovementExecutor {
           } else if (info.ticks < Infinity) {
             if (!batchExecuted) {
               logJump(`Block ${p.vec} visible in ${info.ticks} ticks. Triggering background interaction.`)
-              void this.performInteraction(p, { info, predictBlock: true })
+              void this.performInteraction(p, { info, predictBlock: true }).catch(() => {}) // (its failure fails the move: throwIfInteractionFailed)
             }
             break
           } else {
@@ -400,7 +400,7 @@ export class ForwardDropDownExecutor extends MovementExecutor {
         const breakTarget = remainingBreaks[0]
         logDrop(`[ForwardDrop] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`)
         this.bot.clearControlStates()
-        void this.performInteraction(breakTarget)
+        void this.performInteraction(breakTarget).catch(() => {}) // (its failure fails the move: throwIfInteractionFailed)
         return false
       }
 
@@ -421,7 +421,7 @@ export class ForwardDropDownExecutor extends MovementExecutor {
           } else if (info.ticks < Infinity) {
             if (!batchExecuted) {
               logDrop(`[ForwardDrop] Block ${p.vec} visible in ${info.ticks} ticks. Triggering background interaction.`)
-              void this.performInteraction(p, { info, predictBlock: true })
+              void this.performInteraction(p, { info, predictBlock: true }).catch(() => {}) // (its failure fails the move: throwIfInteractionFailed)
             }
             break
           } else {
@@ -483,7 +483,7 @@ export class StraightDownExecutor extends MovementExecutor {
         const breakTarget = remainingBreaks[0]
         logDown(`[StraightDown] Block ${breakTarget.vec} needs breaking. Triggering background interaction.`)
         this.bot.clearControlStates()
-        void this.performInteraction(breakTarget)
+        void this.performInteraction(breakTarget).catch(() => {}) // (its failure fails the move: throwIfInteractionFailed)
         return false
       }
     }

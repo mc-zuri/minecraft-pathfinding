@@ -116,3 +116,35 @@ test('a move that goes on and on without getting there (backing up for a jump an
     rig.stopPassivePhysics()
   }
 })
+
+test('a dig that fails fails its move (the search goes again), and doesn\'t stay the move\'s interaction with the bot walking into the block', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  const world = (rig.bot as any).world
+  // dirt across the way, 2 high, a long way to either side (put there before the pathfinder listens for updates)
+  for (let y = 64; y < 70; y++) for (let z = -30; z <= 30; z++) world.setBlock(new Vec3(3, y, z), y < 66 ? 'dirt' : 'stone')
+  rig.bot.loadPlugin(createPlugin())
+  try {
+    const dig = rig.bot.dig.bind(rig.bot)
+    let digs = 0
+    rig.bot.dig = async (...args: any[]) => {
+      // the first dig is refused (the server answers "Digging aborted")
+      if (++digs === 1) { failedAt = ticks; throw new Error('Digging aborted') }
+      return await dig(...args)
+    }
+    let ticks = 0
+    let failedAt = -1
+    let searchedAgainAt = -1
+    rig.bot.on('physicsTick', () => { ticks++ })
+    rig.bot.on('pathGenerated', () => { if (failedAt >= 0 && searchedAgainAt < 0) searchedAgainAt = ticks })
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const goal = new goals.GoalBlock(5, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, `goto timed out at ${rig.bot.entity.position} after ${digs} digs`)
+    const at = rig.bot.entity.position
+    assert.ok(Math.hypot(at.x - 5.5, at.z - 0.5) < 1.2, `ended at ${at}`)
+    assert.ok(digs > 1)
+    // at once: the move fails on its next tick, not after the no-progress check's 60 ticks against the block
+    assert.ok(searchedAgainAt >= 0 && searchedAgainAt - failedAt < 30, `searched again ${searchedAgainAt - failedAt} ticks after the failed dig`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

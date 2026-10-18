@@ -94,6 +94,7 @@ export abstract class MovementExecutor extends Movement {
   public reset (): void {
     // log('Resetting MovementExecutor')
     this.aborted = false
+    delete this.interactionError
     delete this.resetReason
     this.task.finish()
   }
@@ -227,11 +228,13 @@ export abstract class MovementExecutor extends Movement {
   public async _performInit (thisMove: Move, currentIndex: number, path: Move[]): Promise<void> {
     await this.holdUntilAborted(thisMove, this.task)
     this.heldForNextTicks = 0
+    delete this.interactionError
     return await this.performInit(thisMove, currentIndex, path)
   }
 
   public async _performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
     await this.holdUntilAborted(thisMove, this.task)
+    this.throwIfInteractionFailed()
     const done = await this.performPerTick(thisMove, tickCount, currentIndex, path)
     if (done !== true) return done
     if (this.readyForNext(thisMove, currentIndex, path)) return true
@@ -649,11 +652,33 @@ export abstract class MovementExecutor extends Movement {
   async performInteraction (interaction: PlaceHandler | BreakHandler, opts: InteractOpts = {}): Promise<void> {
     this._cI = interaction
     interaction.loadMove(this)
-    if (interaction instanceof PlaceHandler) {
-      await this.performPlace(interaction, opts)
-    } else if (interaction instanceof BreakHandler) {
-      await this.performBreak(interaction, opts)
+    try {
+      if (interaction instanceof PlaceHandler) {
+        await this.performPlace(interaction, opts)
+      } else if (interaction instanceof BreakHandler) {
+        await this.performBreak(interaction, opts)
+      }
+    } catch (err) {
+      // the move fails with it on its next tick (most callers don't wait for the interaction)
+      log('interaction failed: %s', (err as Error)?.message ?? String(err))
+      this.interactionError = err
+      throw err
+    } finally {
+      // a failed dig or place doesn't stay the current interaction: left set, the move neither tried it again nor
+      // went on, and the bot stood there (a StraightDown over a block it never broke)
+      if (this._cI === interaction) this._cI = undefined
     }
+  }
+
+  /** what the last interaction of the move failed with, until the move's next tick throws it */
+  protected interactionError?: unknown
+
+  /** a failed interaction fails the move (a CancelError: goto searches again, round it) */
+  protected throwIfInteractionFailed (): void {
+    const err = this.interactionError
+    if (err === undefined) return
+    delete this.interactionError
+    throw new CancelError(`interaction failed: ${(err as Error)?.message ?? String(err)}`)
   }
 
   protected async performPlace (place: PlaceHandler, opts: InteractOpts = {}): Promise<void> {
