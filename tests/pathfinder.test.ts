@@ -294,3 +294,26 @@ test('a parkour jump is planned only over a gap a fall into is lived through: gr
     }
   }
 })
+
+test('a diagonal parkour jump off the diagonal (one over, two along) is not planned by default', async () => {
+  const { ParkourDiagonal } = await import('../src/mineflayer-specific/movements/movementProviders')
+  assert.equal(ParkourDiagonal.allowOffsetDiagonals, false)
+  const rig = preparePathRig({ moveSettings: { canDig: false, canPlace: false } })
+  const world = (rig.bot as any).world
+  try {
+    // pillars over a pit's floor 3 down: the start (0, 0) and the landing (1, 2)
+    for (let x = -4; x <= 6; x++) for (let z = -4; z <= 6; z++) { world.setBlock(new Vec3(x, 63, z), 'air'); world.setBlock(new Vec3(x, 60, z), 'stone') }
+    for (const [px, pz] of [[0, 0], [1, 2]]) for (let y = 61; y < 64; y++) world.setBlock(new Vec3(px, y, pz), 'stone')
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    let final: any
+    await withTimeout((async () => { for await (const res of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(1, 64, 2))) final = res })(), 15000, 'planning timed out')
+    const offsetJumps = final.result.path.filter((m: any) => {
+      const dx = Math.abs(Math.floor(m.exitPos.x) - Math.floor(m.entryPos.x))
+      const dz = Math.abs(Math.floor(m.exitPos.z) - Math.floor(m.entryPos.z))
+      return m.moveType.constructor.name === 'ParkourDiagonal' && dx !== dz
+    })
+    assert.equal(offsetJumps.length, 0, final.result.path.map((m: any) => `${m.moveType.constructor.name} ${m.entryPos} ${m.exitPos}`).join(', '))
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

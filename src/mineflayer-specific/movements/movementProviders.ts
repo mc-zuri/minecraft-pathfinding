@@ -541,8 +541,11 @@ export class ParkourForward extends MovementProvider {
 export class ParkourDiagonal extends MovementProvider {
   movementDirs = Movement.diagonalDirs
 
-  // default: preserve current behavior
-  static allowOffsetDiagonals = true
+  /**
+   * Jumps one over and two along (or two over and three along): off by default, the executor lines them up badly on a
+   * real server (6 of 8 stuck trips on a jungle seed were these, the bot pressed into the corner it jumps past)
+   */
+  static allowOffsetDiagonals = false
 
   provideMovements (start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
     for (const dir of Movement.diagonalDirs) {
