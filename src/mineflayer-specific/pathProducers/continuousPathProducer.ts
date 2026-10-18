@@ -48,6 +48,7 @@ export class ContinuousPathProducer implements PathProducer {
   advance (): AdvanceRes {
     if (this.astarContext == null) {
       const moveHandler = MovementHandler.create(this.bot, this.world, this.movements, this.settings)
+    moveHandler.avoid = this.bot.pathfinder.failedMoves
       moveHandler.loadGoal(this.goal)
 
       const { searchTimeoutMs, searchTickBudgetMs } = this.bot.pathfinder.pathfinderSettings

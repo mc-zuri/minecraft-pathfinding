@@ -77,6 +77,7 @@ export class PartialPathProducer implements PathProducer {
 
   private generateAstarContext (): AStar {
     const moveHandler = MovementHandler.create(this.bot, this.world, this.movements, this.settings)
+    moveHandler.avoid = this.bot.pathfinder.failedMoves
     moveHandler.loadGoal(this.goal)
 
     let start

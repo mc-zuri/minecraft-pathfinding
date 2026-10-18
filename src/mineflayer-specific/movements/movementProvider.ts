@@ -119,8 +119,17 @@ export abstract class MovementProvider extends Movement {
   }
 }
 
+/** a move by its kind and its blocks: what a failed move is remembered by (MovementHandler.avoid) */
+export function moveKey (move: Move): string {
+  const a = move.entryPos
+  const b = move.exitPos
+  return `${move.moveType.constructor.name}:${Math.floor(a.x)},${Math.floor(a.y)},${Math.floor(a.z)}>${Math.floor(b.x)},${Math.floor(b.y)},${Math.floor(b.z)}`
+}
+
 export class MovementHandler implements AMovementProvider<Move> {
   recognizedMovements: MovementProvider[]
+  /** moves (moveKey) the search leaves out: ones that failed in this goto */
+  avoid?: ReadonlySet<string>
   goal!: goals.Goal
   world: World
 
@@ -313,6 +322,12 @@ export class MovementHandler implements AMovementProvider<Move> {
       newMove.loadMove(currentMove)
       newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear)
       newMove.provideMovements(currentMove, moves, this.goal, closed)
+    }
+
+    if (this.avoid != null && this.avoid.size > 0) {
+      for (let i = moves.length - 1; i >= 0; i--) {
+        if (this.avoid.has(moveKey(moves[i]))) moves.splice(i, 1)
+      }
     }
 
     // for (const move of moves) {

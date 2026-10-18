@@ -16,6 +16,7 @@ import { World } from './mineflayer-specific/world/worldInterface'
 import type { ResetReason } from './types'
 import { ThePathfinder } from './ThePathfinder'
 import { printBotControls } from './utils'
+import { moveKey } from './mineflayer-specific/movements/movementProvider'
 
 const debug = require('debug')
 const log = debug('minecraft-pathfinding:PathExecutor')
@@ -37,6 +38,13 @@ export interface PathfinderExecutionHost {
 }
 
 type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform' | 'arrive'
+
+/**
+ * Ticks a move may hold the bot within NO_PROGRESS_DIST of one spot, with no dig or place under way, before it fails
+ * (a CancelError: goto searches again, round it)
+ */
+export const NO_PROGRESS_TICKS = 60
+export const NO_PROGRESS_DIST = 0.25
 
 /** physics ticks one movement tick may go on over (runSync) before the walk fails */
 export const MAX_TICK_IN_FLIGHT = 100
@@ -191,6 +199,22 @@ export class PathExecutor {
     let pendingInit: Promise<void> | undefined
     let tickCount = 0
     let arriveTicks = 0
+    // where the bot was when the current move last got it anywhere, and the ticks since
+    let progressPos = bot.entity.position.clone()
+    let stillTicks = 0
+    // A move that holds the bot in one place (a jump it never lines up for, a corner it presses into) fails after
+    // NO_PROGRESS_TICKS, so that goto searches again without it; a dig or a place under way is progress.
+    const checkProgress = (executor: MovementExecutor): void => {
+      const pos = bot.entity.position
+      if (pos.distanceTo(progressPos) > NO_PROGRESS_DIST || executor.cI != null || (bot as any).targetDigBlock != null) {
+        progressPos = pos.clone()
+        stillTicks = 0
+        return
+      }
+      if (++stillTicks > NO_PROGRESS_TICKS) {
+        throw new CancelError(`no progress in ${NO_PROGRESS_TICKS} ticks at ${pos.toString()}`)
+      }
+    }
     let settled = false
     let recoveryInFlight = false
 
@@ -232,6 +256,9 @@ export class PathExecutor {
     // recovery that did instead threw at once ('Too many failures', MAX_RECOVERY_DEPTH 0) and failed the goto.
     const moveFailed = (err: unknown): void => {
       log(`move failed, searching again: ${String(err)}`)
+      // the next search goes round it
+      const failed = localPath[currentIndex]
+      if (failed != null) this.host.failedMoves.add(moveKey(failed))
       this.lastMoveError = err instanceof Error ? err.message : String(err)
       this.setResetReason('moveFailed')
     }
@@ -349,6 +376,8 @@ export class PathExecutor {
 
         log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId)
         tickCount = 0
+        progressPos = bot.entity.position.clone()
+        stillTicks = 0
 
         await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot())
         executor.loadMove(move)
@@ -429,6 +458,7 @@ export class PathExecutor {
 
           if (runnerStage === 'align') {
             this.check()
+            checkProgress(executor)
 
             const aligned = await this.timeAsync(
               `align ${move.moveType.constructor.name}`,
@@ -469,6 +499,7 @@ export class PathExecutor {
 
           if (runnerStage === 'perform') {
             this.check()
+            checkProgress(executor)
 
             const adding = await this.timeAsync(
               `performPerTick ${move.moveType.constructor.name}`,

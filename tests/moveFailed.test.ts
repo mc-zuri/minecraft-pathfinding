@@ -4,7 +4,7 @@ import { Vec3 } from 'vec3'
 
 import { createPlugin, goals } from '../src'
 import { CancelError } from '../src/mineflayer-specific/exceptions'
-import { Forward } from '../src/mineflayer-specific/movements/movementProviders'
+import { Diagonal, Forward } from '../src/mineflayer-specific/movements/movementProviders'
 import { NewForwardExecutor } from '../src/mineflayer-specific/movements/movementExecutors'
 import { createCacheWorld } from './setup'
 
@@ -28,6 +28,7 @@ function rigFailing (fails: (calls: number) => boolean) {
     }
   }
   rig.bot.pathfinder.setExecutor(Forward, FailingForwardExecutor)
+  rig.bot.pathfinder.setExecutor(Diagonal, FailingForwardExecutor)
   rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
   return rig
 }
@@ -49,6 +50,36 @@ test('moves that keep failing at one place end goto with an error', async () => 
   const rig = rigFailing(() => true)
   try {
     await assert.rejects(withTimeout(rig.bot.pathfinder.goto(new goals.GoalBlock(8, 64, 0)), 20000, 'goto timed out'), /moves in a row failed at .* \(the last: Movement canceled: the test's move failed\)/)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
+test('a move that holds the bot still fails after NO_PROGRESS_TICKS, and the next search goes round it', async () => {
+  const { NO_PROGRESS_TICKS } = await import('../src/pathExecutor')
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin({ optimizers: new Map() } as any))
+  let held = 0
+  // the Forward move onto (2, 64, 0) never gets anywhere (a jump it never lines up for, a corner it presses into)
+  class StuckForwardExecutor extends NewForwardExecutor {
+    async align (thisMove: any, tickCount: number, goal: any): Promise<boolean> {
+      if (Math.floor(thisMove.exitPos.x) === 2 && Math.floor(thisMove.exitPos.z) === 0) {
+        held++
+        rig.bot.clearControlStates()
+        return false
+      }
+      return await super.align(thisMove, tickCount, goal)
+    }
+  }
+  rig.bot.pathfinder.setExecutor(Forward, StuckForwardExecutor)
+  rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+  try {
+    const goal = new goals.GoalBlock(4, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, 'goto timed out')
+    const at = rig.bot.entity.position
+    assert.ok(Math.hypot(at.x - 4.5, at.z - 0.5) < 1, `ended at ${at}`)
+    assert.deepEqual([...rig.bot.pathfinder.failedMoves], ['Forward:1,64,0>2,64,0'])
+    assert.ok(held >= NO_PROGRESS_TICKS && held < 3 * NO_PROGRESS_TICKS, `held ${held} ticks`)
   } finally {
     rig.stopPassivePhysics()
   }

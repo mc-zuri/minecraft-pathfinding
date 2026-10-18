@@ -640,6 +640,7 @@ export class ThePathfinder {
     this.cleanupClient()
     this.moveFailures = 0
     delete this.moveFailureAt
+    this.failedMoves.clear()
     this.executeTask = new Task()
     this.currentGotoGoal = goal
     this.bot.emit('goalSet', goal)
@@ -796,6 +797,9 @@ export class ThePathfinder {
       }
     } while (doForever && this.resetReason !== 'goalReassignment')
   }
+
+  /** the moves (moveKey) that failed in this goto: its searches leave them out */
+  public readonly failedMoves = new Set<string>()
 
   /** where the last move that failed in this goto failed, and how many failed in a row about there */
   private moveFailureAt?: Vec3
