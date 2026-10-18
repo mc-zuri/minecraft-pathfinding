@@ -276,13 +276,25 @@ export class ForwardJumpExecutor extends MovementExecutor {
     }
 
     this.jumpInfo = this.shitter.findJumpPoint(thisMove.exitPos)
-
-    if (this.jumpInfo === null) {
+    this.jumpTries = 0
+    this.leftGround = false
+    // with no plan, the bot walks on and jumps where a jump lands on the step (performPerTick): a jump at once, from
+    // under the low ceiling of the block it came from, bumped its head, fell short, and failed the move as too low
+    this.walkingUp = this.jumpInfo === null
+    if (this.walkingUp) {
       this.bot.setControlState('forward', true)
-      this.bot.setControlState('jump', true)
       this.bot.setControlState('sprint', true)
     }
   }
+
+  /** no jump plan (or the planned jump fell short): the bot walks on, jumping where a jump lands on the step */
+  private walkingUp = false
+  /** the walk-up jump left the ground */
+  private leftGround = false
+  /** the jumps that landed short so far */
+  private jumpTries = 0
+  /** the jumps that may land short (a head bumped, a step's corner caught) before the move fails as too low */
+  public static readonly MAX_JUMP_TRIES = 3
 
   async performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean> {
     if (this.cI != null && !(await this.cI.allowExternalInfluence(this.bot))) {
@@ -343,14 +355,26 @@ export class ForwardJumpExecutor extends MovementExecutor {
       }
     }
 
+    if (this.walkingUp) {
+      if (!this.bot.entity.onGround) this.leftGround = true
+      else if (!this.leftGround) this.bot.setControlState('jump', this.shitter.jumpLandsNow(thisMove.exitPos))
+    }
+
     if (this.bot.entity.position.y - thisMove.exitPos.y < -1.25) throw new CancelError('ForwardJumpMove: too low (1)')
 
-    if (tickCount > (this.jumpInfo?.jumpTick ?? 0) && this.bot.entity.onGround) {
+    const landed = this.walkingUp ? this.leftGround && this.bot.entity.onGround : tickCount > (this.jumpInfo?.jumpTick ?? 0) && this.bot.entity.onGround
+    if (landed) {
       this.bot.setControlState('jump', false)
       this.bot.setControlState('sprint', true)
 
       if (this.bot.entity.position.y - thisMove.exitPos.y < -0.25) {
-        throw new CancelError(`ForwardJumpMove: too low (2) ${this.bot.entity.position.y} ${thisMove.exitPos.y}`)
+        if (++this.jumpTries >= ForwardJumpExecutor.MAX_JUMP_TRIES) {
+          throw new CancelError(`ForwardJumpMove: too low (2) ${this.bot.entity.position.y} ${thisMove.exitPos.y}`)
+        }
+        // landed short (its head on a ceiling, its feet on the step's corner): on, and up again where a jump lands
+        this.jumpInfo = null
+        this.walkingUp = true
+        this.leftGround = false
       }
     }
 

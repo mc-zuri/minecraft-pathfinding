@@ -167,6 +167,22 @@ export class JumpCalculator {
     return null
   }
 
+  /**
+   * Whether a sprint jump from where the bot stands now, forward held, lands at the goal's height. A bump into the
+   * step's face on the way up doesn't rule it out (the collision stops the move along that axis alone, as
+   * Entity.collide does, and the bot rises onto the step), a head bumped on a ceiling does (the jump never gets high
+   * enough): findJumpPoint's plans rule out both.
+   */
+  public jumpLandsNow (goal: Vec3, maxTicks = 20): boolean {
+    const state = this.resetState()
+    stateLookAt(state, goal)
+    state.control.set('forward', true)
+    state.control.set('jump', true)
+    state.control.set('sprint', true)
+    this.engine.simulateUntil((state, ticks) => ticks > 0 && state.onGround, () => { }, () => { }, this.ctx, this.world, maxTicks)
+    return state.onGround && state.pos.y === goal.y
+  }
+
   protected resetState (): PlayerState {
     this.ctx = EPhysicsCtx.FROM_BOT(this.engine.ctx, this.bot)
     this.ctx.state.age = 0
