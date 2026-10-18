@@ -434,7 +434,8 @@ export class GoalLookAt extends Goal {
    * TODO: account for entity collision (prismarine-world currently does not support this).
    */
   isEnd (node: Move): boolean {
-    const dist = this.heuristic(node)
+    // the distance itself: heuristic() is in ticks (× COST_HEURISTIC), which cut the goal off at 1.5 blocks
+    const dist = this.distHeuristic(node)
 
     if (dist > this.distance + 3) return false
     const pos = new Vec3(node.x, node.y + this.eyeHeight, node.z)
