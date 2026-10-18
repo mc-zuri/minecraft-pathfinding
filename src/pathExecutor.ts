@@ -38,6 +38,9 @@ export interface PathfinderExecutionHost {
 
 type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform' | 'arrive'
 
+/** physics ticks one movement tick may go on over (runSync) before the walk fails */
+export const MAX_TICK_IN_FLIGHT = 100
+
 /** ticks the bot may take to walk the rest of the way onto the path's last block */
 const MAX_ARRIVE_TICKS = 40
 
@@ -216,6 +219,8 @@ export class PathExecutor {
       if (settled) return
       settled = true
       bot.off('physicsTickBegin', moveListener)
+      // an abort waiting on the executor (interrupt: MovementExecutor.abort) is let go
+      executorSafeReset(this.getCurrentExecutor())
       rejectCompletion(err)
     }
 
@@ -526,12 +531,18 @@ export class PathExecutor {
     }
 
     // a movement tick still running from an earlier physics tick (runSync)
-    let tickInFlight: { done: boolean } | undefined
+    let tickInFlight: { done: boolean, ticks: number } | undefined
 
     const moveListener = (): void => {
       if (settled || recoveryInFlight) return
       if (tickInFlight != null) {
-        if (!this.runSync(tickInFlight)) return
+        if (!this.runSync(tickInFlight)) {
+          // a tick that never ends (an await nothing answers) fails the walk, in the game's ticks
+          if (++tickInFlight.ticks > MAX_TICK_IN_FLIGHT) {
+            void fail(new Error(`PathExecutor: a movement tick went on for ${MAX_TICK_IN_FLIGHT} ticks`))
+          }
+          return
+        }
         tickInFlight = undefined
       }
       if (runnerStage === 'optimize' || pendingOptimize != null || runnerStage === 'init' || pendingInit != null) {
@@ -554,7 +565,7 @@ export class PathExecutor {
           return
         }
 
-        const state = { done: false }
+        const state = { done: false, ticks: 0 }
         runMovementTick().catch((err) => {
           void fail(err)
         }).finally(() => {

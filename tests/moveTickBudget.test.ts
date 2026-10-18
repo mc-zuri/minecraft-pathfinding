@@ -42,3 +42,27 @@ test('a movement tick that waits on the event loop (a packet, a timer) goes on o
     rig.stopPassivePhysics()
   }
 })
+
+test('a movement tick that never ends fails the walk after MAX_TICK_IN_FLIGHT ticks instead of holding goto (and every later goto) for good', async () => {
+  const { MAX_TICK_IN_FLIGHT } = await import('../src/pathExecutor')
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin())
+  try {
+    class HungForwardExecutor extends NewForwardExecutor {
+      async performPerTick (): Promise<boolean | number> {
+        return await new Promise(() => {})
+      }
+    }
+    rig.bot.pathfinder.setExecutor(Forward, HungForwardExecutor)
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    let ticks = 0
+    rig.bot.on('physicsTick', () => { ticks++ })
+    await assert.rejects(withTimeout(rig.bot.pathfinder.goto(new goals.GoalBlock(8, 64, 0)), 20000, 'goto hung'), /movement tick went on/)
+    assert.ok(ticks >= MAX_TICK_IN_FLIGHT, `${ticks} ticks`)
+    // the pathfinder takes the next goto
+    rig.bot.pathfinder.setExecutor(Forward, NewForwardExecutor)
+    await withTimeout(rig.bot.pathfinder.goto(new goals.GoalBlock(3, 64, 0)), 20000, 'the next goto hung')
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
