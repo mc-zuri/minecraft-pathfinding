@@ -148,3 +148,29 @@ test('a dig that fails fails its move (the search goes again), and doesn\'t stay
     rig.stopPassivePhysics()
   }
 })
+
+test('a move whose start (its digs and places before it sets off) never ends fails after MOVE_TICKS_FACTOR times its cost, and the search goes round it', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin({ optimizers: new Map() } as any))
+  let hung = 0
+  class HungStartExecutor extends NewForwardExecutor {
+    async performInit (thisMove: any, currentIndex: number, path: any[]): Promise<void> {
+      if (Math.floor(thisMove.exitPos.x) === 2 && Math.floor(thisMove.exitPos.z) === 0) {
+        hung++
+        return await new Promise(() => {})
+      }
+      return await super.performInit(thisMove, currentIndex, path)
+    }
+  }
+  rig.bot.pathfinder.setExecutor(Forward, HungStartExecutor)
+  rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+  try {
+    const goal = new goals.GoalNear(4, 64, 0, 1)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, 'goto hung on the move\'s start')
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
+    assert.equal(hung, 1)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

@@ -513,6 +513,8 @@ export class PathExecutor {
                   pendingInit = undefined
                 },
                 (err) => {
+                  // (a start given up on already: its walk is over)
+                  if (settled) return
                   pendingInit = undefined
                   void handleExecutionError(err).catch((handleErr) => {
                     void fail(handleErr)
@@ -597,6 +599,9 @@ export class PathExecutor {
       }
     }
 
+    // the ticks the current move's start (performInit) has run
+    let initTicks = 0
+
     // a movement tick still running from an earlier physics tick (runSync)
     let tickInFlight: { done: boolean, ticks: number } | undefined
 
@@ -612,7 +617,21 @@ export class PathExecutor {
         }
         tickInFlight = undefined
       }
-      if (runnerStage === 'optimize' || pendingOptimize != null || runnerStage === 'init' || pendingInit != null) {
+      if (runnerStage === 'init' || pendingInit != null) {
+        // a move's start (its digs and places before it sets off) that never ends fails the move, in the game's ticks
+        const move = this.getCurrentMove()
+        const limit = move != null ? Math.max(MIN_MOVE_TICKS, MOVE_TICKS_FACTOR * move.cost) : Infinity
+        if (move != null && ++initTicks > limit) {
+          initTicks = 0
+          pendingInit = undefined
+          void handleExecutionError(new CancelError(`${move.moveType.constructor.name} took over ${Math.ceil(limit)} ticks to start`)).catch((err) => {
+            void fail(err)
+          })
+        }
+        return
+      }
+      initTicks = 0
+      if (runnerStage === 'optimize' || pendingOptimize != null) {
         return
       }
 
