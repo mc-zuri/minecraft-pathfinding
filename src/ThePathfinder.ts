@@ -638,6 +638,8 @@ export class ThePathfinder {
     }
 
     this.cleanupClient()
+    this.moveFailures = 0
+    delete this.moveFailureAt
     this.executeTask = new Task()
     this.currentGotoGoal = goal
     this.bot.emit('goalSet', goal)
@@ -713,6 +715,7 @@ export class ThePathfinder {
             }
             task = null
             if (this.resetReason === 'goalReassignment') return
+            if (this.resetReason === 'moveFailed') await this.noteMoveFailure()
             await this.cleanupBot()
             manualCleanup()
             break
@@ -777,6 +780,7 @@ export class ThePathfinder {
               break
             }
 
+            if (this.resetReason === 'moveFailed') await this.noteMoveFailure()
             log('Goto reset detected. Cleaning up and retrying...')
             await this.cleanupBot()
             manualCleanup()
@@ -791,6 +795,32 @@ export class ThePathfinder {
         }
       }
     } while (doForever && this.resetReason !== 'goalReassignment')
+  }
+
+  /** where the last move that failed in this goto failed, and how many failed in a row about there */
+  private moveFailureAt?: Vec3
+  private moveFailures = 0
+
+  /** how many moves in a row may fail about one place (within 2 blocks) before goto gives up */
+  public static readonly MAX_MOVE_FAILURES = 4
+
+  /** a move failed (the walk was reset with 'moveFailed'): goto searches again, unless they keep failing there */
+  private async noteMoveFailure (): Promise<void> {
+    const pos = this.bot.entity.position
+    if (this.moveFailureAt != null && this.moveFailureAt.distanceTo(pos) < 2) {
+      this.moveFailures++
+    } else {
+      this.moveFailureAt = pos.clone()
+      this.moveFailures = 1
+    }
+    if (this.moveFailures > ThePathfinder.MAX_MOVE_FAILURES) {
+      throw new Error(`Goto: ${this.moveFailures} moves in a row failed at ${pos.toString()}`)
+    }
+    // the search starts where the bot stands: on the ground (or in water), not on the way down from a missed jump
+    this.bot.clearControlStates()
+    for (let i = 0; i < 60 && !this.bot.entity.onGround && (this.bot.entity as any).isInWater !== true; i++) {
+      await this.bot.waitForTicks(1)
+    }
   }
 
   async perform (path: Path, goal: goals.Goal, entry = 0): Promise<void> {

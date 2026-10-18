@@ -219,6 +219,14 @@ export class PathExecutor {
       rejectCompletion(err)
     }
 
+    // A move that fails (CancelError: a jump that missed, a fall, a bot too low) ends the walk with a reset: goto
+    // searches again from where the bot is (baritone's MovementStatus.UNREACHABLE, a new path calculated). The
+    // recovery that did instead threw at once ('Too many failures', MAX_RECOVERY_DEPTH 0) and failed the goto.
+    const moveFailed = (err: unknown): void => {
+      log(`move failed, searching again: ${String(err)}`)
+      this.setResetReason('moveFailed')
+    }
+
     const scheduleRecovery = (rawMove: Move): void => {
       if (recoveryInFlight) return
       recoveryInFlight = true
@@ -269,7 +277,8 @@ export class PathExecutor {
           throw err
         }
 
-        scheduleRecovery(rawMove)
+        moveFailed(err)
+        await finish()
         return
       }
 
@@ -506,7 +515,8 @@ export class PathExecutor {
             throw err
           }
 
-          scheduleRecovery(rawMove)
+          moveFailed(err)
+          await finish()
           return
         }
 
