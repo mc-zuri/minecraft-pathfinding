@@ -608,16 +608,23 @@ export class BreakHandler extends InteractHandler {
         await bot.lookAt(this.vec, this.settings.forceLook)
 
         logBreak(`Calling bot.dig on ${block.name}`)
+        // the dig's own ticks (Player.getDestroySpeed, as bot.digTime) and some for the server's answer: the wait is
+        // the game's time, not 5 s of wall clock, which a dig by hand (stone takes 7.5 s) or a loaded machine outlasts
+        const digTicks = Math.ceil((bot.digTime?.(block) ?? 0) / 50)
         this._breakTask = bot.dig(block, 'ignore', 'raycast')
 
         logBreak('Dig task resolved. Now waiting for world update.')
 
-        await waitForSettledBlockStateAtPosition(
+        const settled = waitForSettledBlockStateAtPosition(
           bot,
           this.blockInfo.position,
           (block) => block != null && BlockInfo.replaceables.has(block.type),
-          { timeoutMs: 5000, settleTicks: DEFAULT_SETTLE_TICKS }
+          { timeoutMs: 0, timeoutTicks: digTicks + 100, settleTicks: DEFAULT_SETTLE_TICKS }
         )
+        settled.catch(() => {})
+        // a dig that fails (aborted, out of reach) ends the wait with its error
+        await Promise.race([settled, this._breakTask])
+        await settled
 
         await this._breakTask
 

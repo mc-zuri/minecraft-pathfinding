@@ -198,6 +198,8 @@ export const DEFAULT_SETTLE_TICKS = 2
 
 export interface WaitForSettledBlockPredicateOptions {
   timeoutMs?: number
+  /** the bot's ticks to wait at most (0 or unset: no limit), the way to bound a wait that depends on the game's time */
+  timeoutTicks?: number
   settleTicks?: number
   signal?: AbortSignal
 }
@@ -236,6 +238,7 @@ async function waitForPositionSettle<TResult> (
   position: Vec3,
   opts: {
     timeoutMs?: number
+    timeoutTicks?: number
     settleTicks?: number
     signal?: AbortSignal
     debugLabel: string
@@ -257,6 +260,7 @@ async function waitForPositionSettle<TResult> (
     let finished = false
     let timeoutTimer: NodeJS.Timeout | undefined
     let settleTickListener: (() => void) | undefined
+    let timeoutTickListener: (() => void) | undefined
 
     const succeed = (value: TResult) => {
       if (finished) return
@@ -330,6 +334,7 @@ async function waitForPositionSettle<TResult> (
 
     const cleanup = () => {
       if (timeoutTimer != null) clearTimeout(timeoutTimer)
+      if (timeoutTickListener != null) bot.off('physicsTick', timeoutTickListener)
       cancelSettleTimer()
       offBlockEvent(bot, 'blockUpdate', onUpdate)
       signal?.removeEventListener('abort', onAbort)
@@ -346,6 +351,15 @@ async function waitForPositionSettle<TResult> (
       timeoutTimer = setTimeout(() => {
         fail(new Error(`Timed out waiting for ${opts.debugLabel} at ${position}`))
       }, timeoutMs)
+    }
+
+    const timeoutTicks = opts.timeoutTicks ?? 0
+    if (timeoutTicks > 0) {
+      let ticks = 0
+      timeoutTickListener = () => {
+        if (++ticks >= timeoutTicks) fail(new Error(`Timed out waiting ${timeoutTicks} ticks for ${opts.debugLabel} at ${position}`))
+      }
+      bot.on('physicsTick', timeoutTickListener)
     }
 
     if (signal != null) {
@@ -365,6 +379,7 @@ export async function waitForSettledBlockPredicate (
 ): Promise<Block | null> {
   return await waitForPositionSettle<Block | null>(bot, position, {
     timeoutMs: opts.timeoutMs,
+    timeoutTicks: opts.timeoutTicks,
     settleTicks: opts.settleTicks ?? 10,
     signal: opts.signal,
     debugLabel: 'waitForSettledBlockPredicate',
@@ -409,6 +424,7 @@ export async function waitForSettledBlockStateAtPosition (
 ): Promise<Block | null> {
   return await waitForPositionSettle<Block | null>(bot, position, {
     timeoutMs: opts.timeoutMs,
+    timeoutTicks: opts.timeoutTicks,
     settleTicks: opts.settleTicks ?? DEFAULT_SETTLE_TICKS,
     signal: opts.signal,
     debugLabel: 'waitForSettledBlockStateAtPosition',

@@ -227,3 +227,19 @@ test('a tunnel through a wall goes straight on: Forward breaks the feet block as
     rig.stopPassivePhysics()
   }
 })
+
+test('a dig by hand that takes longer than 5 s of wall clock (stone, 150 ticks) is waited out, not timed out', async () => {
+  const rig = preparePathRig()
+  const world = (rig.bot as any).world
+  try {
+    for (let x = 3; x <= 6; x++) for (let y = 64; y < 70; y++) for (let z = -30; z <= 30; z++) world.setBlock(new Vec3(x, y, z), 'stone')
+    world.setBlock(new Vec3(3, 64, 0), 'dirt')
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const goal = new goals.GoalBlock(3, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 40000, 'goto into the wall timed out')
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

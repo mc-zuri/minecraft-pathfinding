@@ -135,7 +135,10 @@ export abstract class MovementExecutor extends Movement {
     this.task = new Task()
   }
 
-  private async holdUntilAborted (move: Move, task: Task<void>, timeout = 1000): Promise<void> {
+  /** ticks an aborted move waits for the bot to land (safeToCancel) before it fails */
+  public static readonly ABORT_LAND_TICKS = 100
+
+  private async holdUntilAborted (move: Move, task: Task<void>, timeoutTicks = MovementExecutor.ABORT_LAND_TICKS): Promise<void> {
     if (!this.aborted && this.resetReason == null) return
 
     log('holdUntilAborted: aborting process started')
@@ -157,20 +160,20 @@ export abstract class MovementExecutor extends Movement {
 
     if (!this.safeToCancel(move)) {
       // TODO: handle bug (nextMove not included).
+      // in the game's ticks, not a second of wall clock (a fall takes as many ticks however fast they run)
       await new Promise<void>((resolve, reject) => {
+        let ticks = 0
         const listener = (): void => {
           if (this.safeToCancel(move)) {
             this.bot.off('physicsTick', listener)
             // task.finish()
             resolve()
+          } else if (++ticks >= timeoutTicks) {
+            this.bot.off('physicsTick', listener)
+            reject(new Error('Movement failed to abort properly.'))
           }
         }
         this.bot.on('physicsTick', listener)
-        setTimeout(() => {
-          this.bot.off('physicsTick', listener)
-          // task.finish()
-          reject(new Error('Movement failed to abort properly.'))
-        }, timeout)
       })
     }
 

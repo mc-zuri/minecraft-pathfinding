@@ -142,3 +142,19 @@ test('updates at many positions at once (a multi_block_change) wait on one block
   }
   assert.equal(bot.listenerCount('blockUpdate'), 0)
 })
+
+test('a settle wait bounded in ticks (timeoutTicks) outlasts any wall clock and ends after its ticks', async () => {
+  const { bot, tick } = tickedBot('stone')
+  let error: any
+  const wait = waitForSettledBlockStateAtPosition(bot, new Vec3(1, 64, 1), isAir, { timeoutMs: 0, timeoutTicks: 10 }).catch((err) => { error = err })
+  await wallClock(150)
+  assert.equal(error, undefined)
+  tick(9)
+  await Promise.resolve()
+  assert.equal(error, undefined)
+  tick()
+  await wait
+  assert.match(String((error as any)?.message), /Timed out waiting 10 ticks/)
+  assert.equal(bot.listenerCount('physicsTick'), 0)
+  assert.equal(bot.listenerCount('blockUpdate'), 0)
+})
