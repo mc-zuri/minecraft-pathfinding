@@ -210,3 +210,36 @@ test('a dig started and ended is recorded with its block and face (mineflayer\'s
     rig.stopPassivePhysics()
   }
 })
+
+test('the prediction check on again after a while off predicts from the keys of the tick before (the engine\'s prevControl), not from those of the last tick it checked', async () => {
+  const { rig, cacheWorld } = createCacheWorld('1.21.8', 64, new Vec3(0, 64, 0))
+  const bot = rig.bot as any
+  bot.entity.position = new Vec3(0.5, 64, 0.5)
+  const check = new PredictionCheck(bot, { world: () => cacheWorld })
+  try {
+    await ticks(bot, 3)
+    void bot.look(-Math.PI / 2, 0, true)
+    // checked while it sneaks (a parkour move lining up), then off (between two gotos) while it stands with no key
+    const release = check.acquire()
+    bot.setControlState('sneak', true)
+    bot.setControlState('forward', true)
+    await ticks(bot, 3)
+    release()
+    bot.clearControlStates()
+    await ticks(bot, 3)
+    // on again: a sprint jump from where it stands
+    check.alwaysOn = true
+    await ticks(bot, 1)
+    bot.setControlState('forward', true)
+    bot.setControlState('sprint', true)
+    bot.setControlState('jump', true)
+    await ticks(bot, 6)
+    assert.ok(check.stats.checked >= 6, `checked ${check.stats.checked} ticks`)
+    // the check's engine took the sneak key for the tick before's: the bot crouching, no sprint started, 0.29 off
+    assert.deepEqual(check.mismatches.toArray().map((m) => [m.tick, m.cls, m.delta]), [])
+  } finally {
+    bot.clearControlStates()
+    check.detach()
+    rig.stopPassivePhysics()
+  }
+})

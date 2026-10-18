@@ -184,6 +184,8 @@ export class PredictionCheck {
   /** the bot's own digs and places lately, by position: the tick each was seen */
   private readonly own = new Map<string, number>()
   private lastHealth: number | undefined
+  /** the keys of the last tick, on or off (for prevControl where the bot's engine doesn't show its own) */
+  private lastControls: ControlStateHandler | null = null
   private readonly disposers: Array<() => void> = []
 
   constructor (private readonly bot: Bot, private readonly opts: PredictionCheckOptions = {}) {
@@ -345,12 +347,20 @@ export class PredictionCheck {
     ctx.state.pos.set(this.saved.pos.x, this.saved.pos.y, this.saved.pos.z)
     ctx.state.vel.set(this.saved.vel.x, this.saved.vel.y, this.saved.vel.z)
     ctx.state.onGround = this.saved.onGround
+    // the keys of the tick before as the bot's engine kept them (its prevControl: the sneak key the crouch follows,
+    // LocalPlayer.aiStep, and the jump key a glide waits on), which update() leaves to the state's own last tick: the
+    // check's was the last tick it checked, and on again after a while off, a sneak let go of ticks ago crouched the
+    // prediction, kept it from sprinting, and the tick was an 'unknown' mismatch (0.289 off, a sprint jump)
+    const prev = (this.bot.entity as { prevControl?: ControlStateHandler }).prevControl
+    if (prev != null && typeof prev.clone === 'function') ctx.state.prevControl = prev.clone()
+    else if (this.lastControls != null) ctx.state.prevControl = this.lastControls.clone()
     this.pending = true
     this.stats.ms += now() - t0
   }
 
   private onTickEnd (): void {
     this.tick++
+    if (this.bot.entity != null) this.lastControls = ControlStateHandler.COPY_BOT(this.bot)
     if (!this.enabled) {
       this.reset()
       return
