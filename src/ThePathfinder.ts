@@ -835,6 +835,9 @@ export class ThePathfinder {
     return await this.executionRunner.recovery(move, path, goal, entry)
   }
 
+  /** ticks goto's end waits at most for the bot to come to rest (cleanupBot's safety) */
+  public static readonly MAX_SETTLE_TICKS = 40
+
   async cleanupBot (forceSafety = false): Promise<void> {
     this.bot.clearControlStates()
 
@@ -848,6 +851,9 @@ export class ThePathfinder {
 
     if (forceSafety && exec != null) {
       let normVel
+      // the wait for the bot to come to rest is in the game's ticks and bounded: a bot that doesn't (a current, a
+      // ladder, a mob pushing it) held goto for good, and every goto after it
+      let ticks = 0
       do {
         normVel = this.bot.entity.onGround ? this.bot.entity.velocity.offset(0, -this.bot.entity.velocity.y, 0) : this.bot.entity.velocity
         const ectx = exec.simForward({ ticks: 2 })
@@ -858,7 +864,7 @@ export class ThePathfinder {
 
         log(normVel, normVel.norm())
         await this.bot.waitForTicks(1)
-      } while (normVel.norm() > 5e-4)
+      } while (normVel.norm() > 5e-4 && ++ticks < ThePathfinder.MAX_SETTLE_TICKS)
 
       this.bot.setControlState('sneak', false)
     }

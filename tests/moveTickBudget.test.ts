@@ -66,3 +66,22 @@ test('a movement tick that never ends fails the walk after MAX_TICK_IN_FLIGHT ti
     rig.stopPassivePhysics()
   }
 })
+
+test('goto\'s end waits for the bot to come to rest a bounded number of ticks (a bot in a current, on a ladder, pushed by a mob never does)', async () => {
+  const { ThePathfinder } = await import('../src/ThePathfinder')
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin())
+  try {
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    await rig.bot.waitForTicks(2)
+    // the bot keeps moving (as the physics has it, whatever the controls)
+    const entity: any = rig.bot.entity
+    Object.defineProperty(entity, 'velocity', { configurable: true, get: () => new Vec3(0.05, 0, 0), set: () => {} })
+    let ticks = 0
+    rig.bot.on('physicsTick', () => { ticks++ })
+    await withTimeout(rig.bot.pathfinder.cleanupBot(true), 10000, 'cleanupBot waited for the bot to stop for good')
+    assert.ok(ticks < 2 * (ThePathfinder as any).MAX_SETTLE_TICKS, `${ticks} ticks`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
