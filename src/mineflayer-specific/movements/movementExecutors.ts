@@ -790,8 +790,11 @@ export class ParkourForwardExecutor extends MovementExecutor {
 
   private _applyLockedYaw (): void {
     if (this.lockedYaw != null) {
-      // (as the look: bot.look sets the yawDegrees the physics moves by, not entity.yaw alone)
-      void this.bot.look(this.lockedYaw, this.bot.entity.pitch, true)
+      // the yaw the keys are worked out against (botSmartMovement, botStrafeMovement), not the bot's look: the jump's
+      // look is _queueLookAtSync's, and the physics moves the bot by it (its yawDegrees). Turning the look to the
+      // locked yaw too (bot.look) made the jumps worse on a play run (1.21.11, seeds 5 and 7: 24 parkour moves failed,
+      // 7 without), the bot backing up into the block behind its run-up
+      this.bot.entity.yaw = this.lockedYaw
     }
   }
 
