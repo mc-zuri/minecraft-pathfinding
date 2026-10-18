@@ -353,7 +353,7 @@ export class PathExecutor {
         await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot())
         executor.loadMove(move)
 
-        if (executor.isAlreadyCompleted(move, tickCount, goal)) {
+        if (executor._isAlreadyCompleted(move, tickCount, goal, currentIndex, localPath)) {
           currentIndex = this.findNextCurrentIdx(move, localPath, currentIndex)
           this.setCurrentIndex(currentIndex)
           continue

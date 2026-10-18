@@ -223,12 +223,129 @@ export abstract class MovementExecutor extends Movement {
 
   public async _performInit (thisMove: Move, currentIndex: number, path: Move[]): Promise<void> {
     await this.holdUntilAborted(thisMove, this.task)
+    this.heldForNextTicks = 0
     return await this.performInit(thisMove, currentIndex, path)
   }
 
   public async _performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean | number> {
     await this.holdUntilAborted(thisMove, this.task)
-    return await this.performPerTick(thisMove, tickCount, currentIndex, path)
+    const done = await this.performPerTick(thisMove, tickCount, currentIndex, path)
+    if (done !== true) return done
+    if (this.readyForNext(thisMove, currentIndex, path)) return true
+    // over the move's block, but not yet where the next move can go from: on to the block's middle
+    this.steerToExit(thisMove)
+    return false
+  }
+
+  /**
+   * Whether the move is over before it starts (isAlreadyCompleted), and the bot is where the one after it can start
+   * from (see readyForNext).
+   */
+  public _isAlreadyCompleted (thisMove: Move, tickCount: number, goal: goals.Goal, currentIndex: number, path: Move[]): boolean {
+    return this.isAlreadyCompleted(thisMove, tickCount, goal) && this.canStartNext(this.nextMoveOf(thisMove, currentIndex, path))
+  }
+
+  /** ticks a complete move has been held for the next one to be able to start (readyForNext) */
+  private heldForNextTicks = 0
+
+  /** the most ticks a complete move is held for the next one to be able to start before it's let go anyway */
+  public static readonly MAX_HELD_FOR_NEXT_TICKS = 20
+
+  /**
+   * A complete move (isComplete: the bot's box over its block, heading on) lets the next one take over only once the
+   * bot stands where that one can start from (canStartNext), at the latest at the block's middle. Ended as soon as the
+   * box touched the block, the move handed a turn over with the bot still beside the block, and the next one, steering
+   * straight at its own block, pressed the bot into the corner of the wall it was turning round.
+   */
+  protected readyForNext (thisMove: Move, currentIndex: number, path: Move[]): boolean {
+    const next = this.nextMoveOf(thisMove, currentIndex, path)
+    if (next == null) return true
+    const pos = this.bot.entity.position
+    if (Math.hypot(thisMove.exitPos.x - pos.x, thisMove.exitPos.z - pos.z) < MovementExecutor.EXIT_MIDDLE_DIST ||
+      ++this.heldForNextTicks > MovementExecutor.MAX_HELD_FOR_NEXT_TICKS || this.canStartNext(next)) {
+      this.heldForNextTicks = 0
+      return true
+    }
+    return false
+  }
+
+  /** how near the middle of its block (horizontally) a move's end always lets the next one start */
+  public static readonly EXIT_MIDDLE_DIST = 0.15
+
+  /** the raw move after this one in the path (this one may be an optimizer's run of several: the move after its last) */
+  protected nextMoveOf (thisMove: Move, currentIndex: number, path: Move[]): Move | undefined {
+    for (let i = Math.max(0, currentIndex); i < path.length; i++) {
+      if (path[i].exitPos.distanceTo(thisMove.exitPos) < 0.1) return path[i + 1]
+    }
+    return undefined
+  }
+
+  /**
+   * Whether the bot can go from where it stands straight at the next move's block: the player's box, moved along that
+   * line, runs into no block's collision shape (as Entity.collide would stop it), leaving out what it steps up onto
+   * (maxUpStep, 0.6), the next move's own block column (a step it jumps onto) and the blocks that move breaks.
+   */
+  public canStartNext (next: Move | undefined): boolean {
+    if (next == null) return true
+    const pos = this.bot.entity.position
+    const target = next.exitPos
+    const dx = target.x - pos.x
+    const dz = target.z - pos.z
+    const len = Math.hypot(dx, dz)
+    if (len < 1e-6) return true
+
+    const hW = 0.3 - 1e-3
+    const minY = pos.y + 0.6 // what the bot steps up onto doesn't stop it (LivingEntity's maxUpStep)
+    const maxY = pos.y + 1.8 - 1e-3
+    const skipX = Math.floor(target.x)
+    const skipZ = Math.floor(target.z)
+    const broken = new Set(next.toBreak.map((b) => `${b.vec.x},${b.vec.y},${b.vec.z}`))
+    const steps = Math.ceil(len / 0.1)
+    const shapes = new Map<string, AABB[]>()
+    const shapesAt = (x: number, y: number, z: number): AABB[] => {
+      const key = `${x},${y},${z}`
+      let bbs = shapes.get(key)
+      if (bbs == null) {
+        bbs = []
+        const info = this.world.getBlockInfo(new Vec3(x, y, z))
+        if (info.physical && !broken.has(key)) {
+          bbs = (info.block != null ? info.getBBs() : [new AABB(x, y, z, x + 1, info.height, z + 1)])
+            // a shape the bot's box is in already (a doorway, a ladder) doesn't stop it either
+            .filter((bb) => bb.maxY > minY && bb.minY < maxY && !this.boxOverlaps(bb, pos.x, pos.z, hW))
+        }
+        shapes.set(key, bbs)
+      }
+      return bbs
+    }
+    for (let s = 1; s <= steps; s++) {
+      const cx = pos.x + (dx * s) / steps
+      const cz = pos.z + (dz * s) / steps
+      for (let x = Math.floor(cx - hW); x <= Math.floor(cx + hW); x++) {
+        for (let z = Math.floor(cz - hW); z <= Math.floor(cz + hW); z++) {
+          if (x === skipX && z === skipZ) continue
+          for (let y = Math.floor(minY); y <= Math.floor(maxY); y++) {
+            for (const bb of shapesAt(x, y, z)) {
+              if (this.boxOverlaps(bb, cx, cz, hW)) return false
+            }
+          }
+        }
+      }
+    }
+    return true
+  }
+
+  private boxOverlaps (bb: AABB, cx: number, cz: number, hW: number): boolean {
+    return bb.minX < cx + hW && bb.maxX > cx - hW && bb.minZ < cz + hW && bb.maxZ > cz - hW
+  }
+
+  /** holds the bot on for the middle of the move's block, the way it walks there (no jump, no sprint) */
+  protected steerToExit (thisMove: Move): void {
+    const exit = thisMove.exitPos
+    void this.lookAtPathPos(exit)
+    this.bot.setControlState('sprint', false)
+    this.bot.setControlState('jump', ((this.bot.entity as any).isInWater as boolean) && this.bot.entity.position.y < exit.y)
+    botStrafeMovement(this.bot, exit, true)
+    botSmartMovement(this.bot, exit, false)
   }
 
   public async _align (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
