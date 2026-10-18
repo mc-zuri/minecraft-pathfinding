@@ -60,5 +60,7 @@ export type { ExclusionArea } from './mineflayer-specific/movements/exclusionZon
 export { MovementOptimizer } from './mineflayer-specific/post'
 export type { BuildableMoveOptimizer, OptimizationSetup, OptimizationMap } from './mineflayer-specific/post'
 export { Move } from './mineflayer-specific/move'
+export { digInSight, aimAt, crosshairBlock, blockReach } from './mineflayer-specific/crosshairDig'
+export type { DigInSightOptions, CrosshairHit, AimResult } from './mineflayer-specific/crosshairDig'
 
 export * as movementProviders from './mineflayer-specific/movements/movementProviders'

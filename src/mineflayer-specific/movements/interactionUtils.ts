@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, @typescript-eslint/strict-boolean-expressions */
 import { Bot, BotEvents } from 'mineflayer'
+import { digInSight } from '../crosshairDig'
 import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
@@ -611,14 +612,12 @@ export class BreakHandler extends InteractHandler {
           throw new Error('Invalid block')
         }
 
-        logBreak(`Looking at ${this.vec} to start digging.`)
-        await bot.lookAt(this.vec, this.settings.forceLook)
-
-        logBreak(`Calling bot.dig on ${block.name}`)
+        logBreak(`Digging ${block.name} through the crosshair`)
         // the dig's own ticks (Player.getDestroySpeed, as bot.digTime) and some for the server's answer: the wait is
         // the game's time, not 5 s of wall clock, which a dig by hand (stone takes 7.5 s) or a loaded machine outlasts
         const digTicks = Math.ceil((bot.digTime?.(block) ?? 0) / 50)
-        this._breakTask = bot.dig(block, 'ignore', 'raycast')
+        // only the block the crosshair hits breaks, as vanilla's player breaks it (a leaf in front of it first)
+        this._breakTask = digInSight(bot, block)
 
         logBreak('Dig task resolved. Now waiting for world update.')
 
