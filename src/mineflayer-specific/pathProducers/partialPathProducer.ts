@@ -86,7 +86,8 @@ export class PartialPathProducer implements PathProducer {
       start = this.start
     }
 
-    const ret = new AStar(start, moveHandler, this.goal, -1, 40, -1, 0)
+    const { searchTimeoutMs, searchTickBudgetMs } = this.bot.pathfinder.pathfinderSettings
+    const ret = new AStar(start, moveHandler, this.goal, searchTimeoutMs ?? -1, searchTickBudgetMs ?? 40, -1, 0)
     return ret
   }
 
@@ -115,6 +116,20 @@ export class PartialPathProducer implements PathProducer {
           },
           astarContext
         }
+      }
+    }
+
+    if (result.status === 'timeout') {
+      // the search ran out of time: the way to the best node it got to, after the parts already taken (the caller goes
+      // that far and plans again from there)
+      log('Search timed out. Taking the way to its best node (%d moves).', result.path.length)
+      const astarContext = this._lastContext
+      delete this._lastContext
+      this.lastPath = [...this.lastPath, ...result.path]
+      this.latestCost += result.path.reduce((acc, move) => acc + move.cost, 0)
+      return {
+        result: { ...result, status, cost: this.latestCost, path: this.lastPath },
+        astarContext
       }
     }
 

@@ -23,6 +23,9 @@ export class AStar<Data extends PathData, MProvider extends MovementProvider<Dat
   checkInterval = 4// 1 << 5 - 1
   nodeConsiderCount = 0
 
+  /** ms spent in compute() so far, over all its calls (the ticks the search ran in) */
+  computeTime = 0
+
   constructor (
     start: Data,
     movements: MProvider,
@@ -112,10 +115,13 @@ export class AStar<Data extends PathData, MProvider extends MovementProvider<Dat
         const time = performance.now()
         if (time - computeStartTime > this.tickTimeout) {
           // compute time per tick
+          this.computeTime += time - computeStartTime
           return this.makeResult('partial', this.bestNode)
         }
-        if (this.timeout >= 0 && time - this.startTime > this.timeout) {
-          // total compute time
+        if (this.timeout >= 0 && this.computeTime + time - computeStartTime > this.timeout) {
+          // total compute time, over the ticks it ran in (not the wall clock since it started: the ticks in between
+          // are the bot's, and under a loaded machine or a lockstep server they take any time)
+          this.computeTime += time - computeStartTime
           return this.makeResult('timeout', this.bestNode)
         }
       }
@@ -285,10 +291,13 @@ export class AStarBackOff<Data extends PathData, MProv extends MovementProvider<
         const time = performance.now()
         if (time - computeStartTime > this.tickTimeout) {
           // compute time per tick
+          this.computeTime += time - computeStartTime
           return this.makeResult('partial', this.getActualBestNode())
         }
-        if (this.timeout >= 0 && time - this.startTime > this.timeout) {
-          // total compute time
+        if (this.timeout >= 0 && this.computeTime + time - computeStartTime > this.timeout) {
+          // total compute time, over the ticks it ran in (not the wall clock since it started: the ticks in between
+          // are the bot's, and under a loaded machine or a lockstep server they take any time)
+          this.computeTime += time - computeStartTime
           return this.makeResult('timeout', this.getActualBestNode())
         }
       }

@@ -78,10 +78,12 @@ export class AStarNeighbor extends AStar {
         const time = performance.now()
         if (time - computeStartTime > this.tickTimeout) {
           // compute time per tick
+          this.computeTime += time - computeStartTime
           return this.makeResult('partial', this.getActualBestNode())
         }
-        if (this.timeout >= 0 && time - this.startTime > this.timeout) {
-          // total compute time
+        if (this.timeout >= 0 && this.computeTime + time - computeStartTime > this.timeout) {
+          // total compute time, over the ticks it ran in
+          this.computeTime += time - computeStartTime
           return this.makeResult('timeout', this.getActualBestNode())
         }
       }

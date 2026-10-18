@@ -67,12 +67,22 @@ export interface PathfinderOptions {
    * microtasks (default 0); a tick that isn't done by then goes on over the next physics ticks (PathExecutor.runSync)
    */
   moveTickBudgetMs?: number
+  /** ms of computing the search does in a tick before it lets the tick go on (default 40) */
+  searchTickBudgetMs?: number
+  /**
+   * ms of computing, over all the ticks it runs in, after which a search stops and the bot goes the way to the best
+   * node it got to, then searches again from there (default 5000; -1 for no limit). Some terrain (the nether, a wood
+   * round a goal it can't get to) kept a search going for good.
+   */
+  searchTimeoutMs?: number
 }
 
 const DEFAULT_PATHFINDER_OPTS: PathfinderOptions = {
   partialPathProducer: false,
   partialPathLength: 50,
-  moveTickBudgetMs: 0
+  moveTickBudgetMs: 0,
+  searchTickBudgetMs: 40,
+  searchTimeoutMs: 5000
 }
 
 const EMPTY_VEC = new Vec3(0, 0, 0)
@@ -667,6 +677,9 @@ export class ThePathfinder {
       }
     }
 
+    // how near the goal (its heuristic) the last search that ran out of time got: the next must get nearer
+    let timedOutBest = Infinity
+
     do {
       let madeIt = false
       do {
@@ -674,8 +687,37 @@ export class ThePathfinder {
 
         let task: Promise<void> | null = null
         let res1: Path | null = null // Strictly tracking unoptimized Path now!
+        // moves of the partial producer's path the perform that has finished walked
+        let walked = 0
 
         for await (const res of this.getPathTo(goal)) {
+          if (res.result.status === 'timeout' && res.result.path.length > 0) {
+            // the search ran out of time (searchTimeoutMs): the way to the best node it got to, then a new search from
+            // there, as long as each gets nearer the goal
+            const path = res.result.path
+            const best = goal.heuristic(path[path.length - 1])
+            if (!(best < timedOutBest)) {
+              log('_goto: the search timed out no nearer the goal (%d, before %d)', best, timedOutBest)
+              if (task !== null && res1 !== null) res1.path.length = 0
+              return
+            }
+            timedOutBest = best
+            log('_goto: the search timed out; going the %d moves to its best node', path.length)
+            this.bot.emit('pathGenerated', res.result)
+            if (task !== null && res1 !== null) {
+              res1.path.length = path.length
+              for (let i = 0; i < path.length; i++) res1.path[i] = path[i]
+              await task
+            } else {
+              await this.perform({ ...res.result, path: path.slice(walked) }, goal)
+            }
+            task = null
+            if (this.resetReason === 'goalReassignment') return
+            await this.cleanupBot()
+            manualCleanup()
+            break
+          }
+
           if (res.result.status !== 'success') {
             if (res.result.status === 'noPath' || res.result.status === 'timeout' || res.result.status === 'canceled') {
               log('_goto path finding ended early: %s', res.result.status)
@@ -688,6 +730,7 @@ export class ThePathfinder {
               if (res1 === null) {
                 res1 = res.result
                 task = this.perform(res1, goal).finally(() => {
+                  walked = res1?.path.length ?? walked
                   task = null
                   res1 = null
                 })
