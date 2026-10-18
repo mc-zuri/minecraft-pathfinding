@@ -210,6 +210,7 @@ export interface WaitForSettledBlockUpdateOptions {
 
 export interface HandleSettledBlockEventOptions {
   settleTicks?: number
+  /** unused: a position settles after the bot's ticks, however long they take */
   timeoutMs?: number
   signal?: AbortSignal
 }
@@ -473,11 +474,22 @@ export async function waitForSettledBlockUpdateAtPosition (
   })
 }
 
+interface PendingSettle {
+  oldBlock: Block | null
+  newBlock: Block | null
+  position: Vec3
+  ticks: number
+}
+
 /**
  * Listens to global blockUpdate events, but only calls the listener after the
  * affected position has gone quiet for `settleTicks` of the bot's ticks.
  *
- * - Deduplicates concurrent checks per position
+ * - One blockUpdate listener and, while any position waits, one physicsTick listener, whatever the number of
+ *   positions: a wait of its own for every position updated (a multi_block_change, water flowing, an explosion) put
+ *   a blockUpdate and a physicsTick listener on the bot for each, hundreds at once, every one of them called on every
+ *   later update
+ * - A later update at a waiting position starts its ticks again; the listener gets the first update's blocks
  * - Reads the final block from the world before invoking the listener
  */
 export function handleSettledBlockEvent (
@@ -485,44 +497,70 @@ export function handleSettledBlockEvent (
   listener: SettledBlockUpdateListener,
   opts: HandleSettledBlockEventOptions = {}
 ): () => void {
-  const pending = new Map<string, Promise<void>>()
+  const settleTicks = opts.settleTicks ?? DEFAULT_SETTLE_TICKS
+  const pending = new Map<string, PendingSettle>()
+  let ticking = false
+  let disposed = false
 
   const keyOf = (pos: Vec3): string => `${pos.x},${pos.y},${pos.z}`
 
-  const dispose = handleBlockEvent(bot, 'blockUpdate', (oldBlock, newBlock) => {
+  const settle = (entry: PendingSettle, key: string): void => {
+    const settledBlock = bot.blockAt(entry.position) ?? null
+    void (async () => await listener(entry.oldBlock, entry.newBlock, settledBlock))().catch((err) => {
+      debug('settled block listener failed for %s: %s', key, err instanceof Error ? err.message : String(err))
+    })
+  }
+
+  const onTick = (): void => {
+    for (const [key, entry] of pending) {
+      if (++entry.ticks < settleTicks) continue
+      pending.delete(key)
+      settle(entry, key)
+    }
+    if (pending.size === 0) stopTicking()
+  }
+
+  const stopTicking = (): void => {
+    if (!ticking) return
+    ticking = false
+    bot.off('physicsTick', onTick)
+  }
+
+  const disposeUpdates = handleBlockEvent(bot, 'blockUpdate', (oldBlock, newBlock) => {
+    if (disposed) return
     if (oldBlock == null && newBlock == null) return
 
     const position = oldBlock?.position ?? newBlock?.position
     if (position == null) return
 
     const key = keyOf(position)
-    if (pending.has(key)) return
+    const waiting = pending.get(key)
+    if (waiting != null) {
+      waiting.ticks = 0
+      return
+    }
 
-    const task = (async () => {
-      try {
-        const settledBlock = await waitForSettledBlockUpdateAtPosition(bot, position, {
-          settleTicks: opts.settleTicks,
-          timeoutMs: opts.timeoutMs,
-          signal: opts.signal
-        })
-
-        await listener(oldBlock, newBlock, settledBlock)
-      } catch (err) {
-        debug(
-          'settled block listener failed for %s: %s',
-          key,
-          err instanceof Error ? err.message : String(err)
-        )
-      } finally {
-        pending.delete(key)
-      }
-    })()
-
-    pending.set(key, task)
+    const entry: PendingSettle = { oldBlock, newBlock, position: position.clone(), ticks: 0 }
+    if (settleTicks <= 0) {
+      settle(entry, key)
+      return
+    }
+    pending.set(key, entry)
+    if (!ticking) {
+      ticking = true
+      bot.on('physicsTick', onTick)
+    }
   })
 
-  return () => {
-    dispose()
+  const dispose = (): void => {
+    if (disposed) return
+    disposed = true
+    disposeUpdates()
+    stopTicking()
     pending.clear()
+    opts.signal?.removeEventListener('abort', dispose)
   }
+  opts.signal?.addEventListener('abort', dispose, { once: true })
+
+  return dispose
 }

@@ -350,8 +350,7 @@ export class ThePathfinder {
       },
       {
         // the block's update settles over the bot's ticks (DEFAULT_SETTLE_TICKS: the server's next tick), not 75 ms
-        settleTicks: DEFAULT_SETTLE_TICKS,
-        timeoutMs: 250
+        settleTicks: DEFAULT_SETTLE_TICKS
       }
     )
 

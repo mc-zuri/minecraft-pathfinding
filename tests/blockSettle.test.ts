@@ -109,3 +109,36 @@ test('the pathfinder\'s settled block listener is called after the update\'s tic
     dispose()
   }
 })
+
+test('updates at many positions at once (a multi_block_change) wait on one blockUpdate and one physicsTick listener, not one each', async () => {
+  const bot: any = new EventEmitter()
+  const blocks = new Map<string, any>()
+  bot.blockAt = (p: Vec3) => blocks.get(p.floored().toString()) ?? null
+  const calls: any[] = []
+  const dispose = handleSettledBlockEvent(bot, (oldBlock, _newBlock, settledBlock) => { calls.push([oldBlock?.name, settledBlock?.name]) }, { settleTicks: DEFAULT_SETTLE_TICKS })
+  try {
+    for (let i = 0; i < 500; i++) {
+      const pos = new Vec3(i, 64, 0)
+      const block = { name: 'water', type: 2, position: pos }
+      blocks.set(pos.toString(), block)
+      bot.emit('blockUpdate', { name: 'air', type: 0, position: pos }, block)
+    }
+    assert.equal(bot.listenerCount('blockUpdate'), 1)
+    assert.equal(bot.listenerCount('physicsTick'), 1)
+    bot.emit('physicsTick')
+    // a later update at a waiting position starts its ticks again
+    bot.emit('blockUpdate', blocks.get(new Vec3(0, 64, 0).toString()), blocks.get(new Vec3(0, 64, 0).toString()))
+    bot.emit('physicsTick')
+    await wallClock(0)
+    assert.equal(calls.length, 499)
+    assert.deepEqual(calls[0], ['air', 'water'])
+    bot.emit('physicsTick')
+    await wallClock(0)
+    assert.equal(calls.length, 500)
+    // nothing left waiting: no tick listener left on the bot
+    assert.equal(bot.listenerCount('physicsTick'), 0)
+  } finally {
+    dispose()
+  }
+  assert.equal(bot.listenerCount('blockUpdate'), 0)
+})
