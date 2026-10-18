@@ -85,3 +85,38 @@ test('goto\'s end waits for the bot to come to rest a bounded number of ticks (a
     rig.stopPassivePhysics()
   }
 })
+
+test('a thread that can\'t block in Atomics.wait (a browser\'s main thread) never waits out moveTickBudgetMs: the slow tick goes on over the next ticks', async () => {
+  const { canAtomicsWait, resetAtomicsWaitCheck } = await import('../src/pathExecutor')
+  resetAtomicsWaitCheck()
+  assert.equal(canAtomicsWait(), true)
+
+  const wait = Atomics.wait
+  let calls = 0
+  // a browser's main thread: Atomics.wait throws a TypeError whatever it's given
+  ;(Atomics as any).wait = () => { calls++; throw new TypeError('Atomics.wait cannot be called in this context') }
+  resetAtomicsWaitCheck()
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { moveTickBudgetMs: 1000 } } as any))
+  try {
+    assert.equal(canAtomicsWait(), false)
+    class SlowForwardExecutor extends NewForwardExecutor {
+      async performPerTick (thisMove: any, tickCount: number, currentIndex: number, path: any[]): Promise<boolean | number> {
+        if (tickCount % 5 === 0) await new Promise((resolve) => setTimeout(resolve, 20))
+        return await super.performPerTick(thisMove, tickCount, currentIndex, path)
+      }
+    }
+    rig.bot.pathfinder.setExecutor(Forward, SlowForwardExecutor)
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const goal = new goals.GoalBlock(8, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 20000, 'goto timed out')
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
+    // the one probe, no wait
+    assert.equal(calls, 1)
+  } finally {
+    rig.stopPassivePhysics()
+    ;(Atomics as any).wait = wait
+    resetAtomicsWaitCheck()
+  }
+})

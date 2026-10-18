@@ -63,6 +63,29 @@ function isNodeRuntime (): boolean {
   return typeof process !== 'undefined' && process.versions?.bun == null
 }
 
+let atomicsWaitAllowed: boolean | undefined
+
+/**
+ * Whether this thread may block in Atomics.wait: Node's main thread and workers may, a browser's main thread may not
+ * (it throws), and without a SharedArrayBuffer (a page that isn't cross-origin isolated) there's nothing to wait on.
+ * A wait on a value the array doesn't hold returns 'not-equal' at once where it's allowed.
+ */
+export function canAtomicsWait (): boolean {
+  if (atomicsWaitAllowed != null) return atomicsWaitAllowed
+  try {
+    atomicsWaitAllowed = typeof SharedArrayBuffer === 'function' && typeof Atomics?.wait === 'function' &&
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 1, 0) === 'not-equal'
+  } catch {
+    atomicsWaitAllowed = false
+  }
+  return atomicsWaitAllowed
+}
+
+/** forgets what canAtomicsWait found (tests) */
+export function resetAtomicsWaitCheck (): void {
+  atomicsWaitAllowed = undefined
+}
+
 export class PathExecutor {
   private currentExecutionId = 0
   private currentIndex = 0
@@ -147,14 +170,15 @@ export class PathExecutor {
    * more, a packet (a dig's or a block's) or a later tick (an abort waiting for the bot to land), goes on over the
    * ticks after, the bot keeping its controls, instead of failing the walk after 40 ms of wall clock (on a loaded
    * machine, and under a lockstep server whose tick waits on the client's). A wait here holds the event loop, which no
-   * packet or timer gets through, so the default budget is 0.
+   * packet or timer gets through, so the default budget is 0; where the thread can't block (a browser's main thread,
+   * canAtomicsWait) the budget is 0 whatever it's set to.
    */
   private runSync (state: { done: boolean }): boolean {
     if (state.done) return true
     const tickCallback = (process as NodeJS.Process & { _tickCallback?: () => void })._tickCallback
     tickCallback?.call(process)
     const budget = this.host.pathfinderSettings.moveTickBudgetMs ?? 0
-    if (state.done || !(budget > 0)) return state.done
+    if (state.done || !(budget > 0) || !canAtomicsWait()) return state.done
 
     const waitArray = new Int32Array(new SharedArrayBuffer(4))
     const start = performance.now()
