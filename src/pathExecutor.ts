@@ -389,6 +389,14 @@ export class PathExecutor {
         this.setCurrentIndex(currentIndex)
         this.setCurrentPath(localPath)
 
+        // the move after this one as it will run (an optimizer's straight run of several), and the raw moves in it:
+        // this one ends where that one can start from (MovementExecutor.readyForNext)
+        const endIdx = localPath.findIndex((m, i) => i >= currentIndex && m.exitPos.distanceTo(move.exitPos) < 0.1)
+        const nextRaw = endIdx !== -1 ? localPath[endIdx + 1] : undefined
+        const nextRun = nextRaw != null ? (optSequence.find((m) => m.hash === nextRaw.hash) ?? nextRaw) : undefined
+        const spanEnd = nextRun != null ? localPath.findIndex((m, i) => i > endIdx && m.exitPos.distanceTo(nextRun.exitPos) < 0.1) : -1
+        executor.setFollowing(nextRun, nextRun != null ? localPath.slice(endIdx + 1, spanEnd === -1 ? endIdx + 2 : spanEnd + 1) : [])
+
         log(`[ExecID %d] Entering movement ${move.moveType.constructor.name}. Idx: ${this.getCurrentIndex()}, start: ${move.entryPos}, end: ${move.exitPos}`, myExecutionId)
         tickCount = 0
         progressPos = bot.entity.position.clone()

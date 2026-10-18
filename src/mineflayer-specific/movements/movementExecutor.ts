@@ -245,7 +245,24 @@ export abstract class MovementExecutor extends Movement {
    * from (see readyForNext).
    */
   public _isAlreadyCompleted (thisMove: Move, tickCount: number, goal: goals.Goal, currentIndex: number, path: Move[]): boolean {
-    return this.isAlreadyCompleted(thisMove, tickCount, goal) && this.canStartNext(this.nextMoveOf(thisMove, currentIndex, path))
+    return this.isAlreadyCompleted(thisMove, tickCount, goal) && this.canStartNext(...this.nextOf(thisMove, currentIndex, path))
+  }
+
+  /**
+   * The move that runs after this one, as the path's runner will run it (an optimizer's run of several raw moves: the
+   * bot steers straight at its far end), and the raw moves it is made of. Set by the runner before the move starts.
+   */
+  private following?: { move: Move | undefined, span: Move[] }
+
+  public setFollowing (move: Move | undefined, span: Move[] = move != null ? [move] : []): void {
+    this.following = { move, span }
+  }
+
+  private nextOf (thisMove: Move, currentIndex: number, path: Move[]): [Move | undefined, Move[]] {
+    // (with none known yet, the raw path: a partial path's tail may have come since)
+    if (this.following?.move != null) return [this.following.move, this.following.span]
+    const next = this.nextMoveOf(thisMove, currentIndex, path)
+    return [next, next != null ? [next] : []]
   }
 
   /** ticks a complete move has been held for the next one to be able to start (readyForNext) */
@@ -261,11 +278,11 @@ export abstract class MovementExecutor extends Movement {
    * straight at its own block, pressed the bot into the corner of the wall it was turning round.
    */
   protected readyForNext (thisMove: Move, currentIndex: number, path: Move[]): boolean {
-    const next = this.nextMoveOf(thisMove, currentIndex, path)
+    const [next, span] = this.nextOf(thisMove, currentIndex, path)
     if (next == null) return true
     const pos = this.bot.entity.position
     if (Math.hypot(thisMove.exitPos.x - pos.x, thisMove.exitPos.z - pos.z) < MovementExecutor.EXIT_MIDDLE_DIST ||
-      ++this.heldForNextTicks > MovementExecutor.MAX_HELD_FOR_NEXT_TICKS || this.canStartNext(next)) {
+      ++this.heldForNextTicks > MovementExecutor.MAX_HELD_FOR_NEXT_TICKS || this.canStartNext(next, span)) {
       this.heldForNextTicks = 0
       return true
     }
@@ -286,9 +303,11 @@ export abstract class MovementExecutor extends Movement {
   /**
    * Whether the bot can go from where it stands straight at the next move's block: the player's box, moved along that
    * line, runs into no block's collision shape (as Entity.collide would stop it), leaving out what it steps up onto
-   * (maxUpStep, 0.6), the next move's own block column (a step it jumps onto) and the blocks that move breaks.
+   * (maxUpStep, 0.6), the block columns of the raw moves the next one is made of (`span`: the path's own cells, a step
+   * it jumps onto) and the blocks that move breaks. The next move is the one that runs: an optimizer's straight run of
+   * several, steered at its far end, not the raw one block on.
    */
-  public canStartNext (next: Move | undefined): boolean {
+  public canStartNext (next: Move | undefined, span: Move[] = next != null ? [next] : []): boolean {
     if (next == null) return true
     const pos = this.bot.entity.position
     const target = next.exitPos
@@ -300,8 +319,7 @@ export abstract class MovementExecutor extends Movement {
     const hW = 0.3 - 1e-3
     const minY = pos.y + 0.6 // what the bot steps up onto doesn't stop it (LivingEntity's maxUpStep)
     const maxY = pos.y + 1.8 - 1e-3
-    const skipX = Math.floor(target.x)
-    const skipZ = Math.floor(target.z)
+    const skip = new Set([next, ...span].map((m) => `${Math.floor(m.exitPos.x)},${Math.floor(m.exitPos.z)}`))
     const broken = new Set(next.toBreak.map((b) => `${b.vec.x},${b.vec.y},${b.vec.z}`))
     const steps = Math.ceil(len / 0.1)
     const shapes = new Map<string, AABB[]>()
@@ -325,7 +343,7 @@ export abstract class MovementExecutor extends Movement {
       const cz = pos.z + (dz * s) / steps
       for (let x = Math.floor(cx - hW); x <= Math.floor(cx + hW); x++) {
         for (let z = Math.floor(cz - hW); z <= Math.floor(cz + hW); z++) {
-          if (x === skipX && z === skipZ) continue
+          if (skip.has(`${x},${z}`)) continue
           for (let y = Math.floor(minY); y <= Math.floor(maxY); y++) {
             for (const bb of shapesAt(x, y, z)) {
               if (this.boxOverlaps(bb, cx, cz, hW)) return false

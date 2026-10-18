@@ -55,3 +55,27 @@ test('a move on a turn ends where the next can start: the bot goes round the cor
     rig.stopPassivePhysics()
   }
 })
+
+test('canStartNext checks the line to the end of the move that runs next (an optimizer\'s straight run of several), not to the raw move one block on', async () => {
+  const { NewForwardExecutor } = await import('../src/mineflayer-specific/movements/movementExecutors')
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin())
+  const world = (rig.bot as any).world
+  try {
+    // a one-wide corridor along x at z 0 out to x 4, opening into a room from x 5 on
+    for (let x = -2; x <= 4; x++) for (const z of [-1, 1]) for (let y = 64; y < 66; y++) world.setBlock(new Vec3(x, y, z), 'stone')
+    rig.bot.entity.position = new Vec3(4.3, 64, 0.5)
+    const executor = new NewForwardExecutor(rig.bot as any, rig.bot.pathfinder.world, rig.bot.pathfinder.defaultMoveSettings)
+    const at = (x: number, z: number): any => ({ exitPos: new Vec3(x + 0.5, 64, z + 0.5), toBreak: [] })
+    // one block on, out of the corridor: clear
+    assert.equal(executor.canStartNext(at(5, 0)), true)
+    // the straight run across the room it starts, steered at its far end: through the corridor's corner at (4, -1)
+    const span = [at(5, 0), at(6, -1), at(7, -2), at(8, -3), at(9, -4), at(10, -5), at(11, -6), at(12, -7)]
+    assert.equal(executor.canStartNext(at(12, -7), span), false)
+    // from the corridor's mouth, it is
+    rig.bot.entity.position = new Vec3(5.5, 64, 0.5)
+    assert.equal(executor.canStartNext(at(12, -7), span), true)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
