@@ -449,30 +449,45 @@ export class BlockInfo {
 
 export class CacheSyncWorld implements WorldType {
   blockInfos: LRUCache<string, BlockInfo>
-  world: Bot['world']
   cacheCalls = 0
   enabled = true
+  private readonly referenceWorld?: Bot['world']
 
-  minY: number
-  constructor (bot: Bot, referenceWorld: Bot['world']) {
-    this.minY = (bot.game as any).minY
+  /**
+   * The world read: the one given, else the bot's. mineflayer makes bot.world on the login packet (blocks.js'
+   * switchWorld), so a pathfinder loaded with the bot, before it logs in (a client that loads its plugins at
+   * createBot), has none yet to hold on to.
+   */
+  get world (): Bot['world'] {
+    return this.referenceWorld ?? this.bot.world
+  }
+
+  /** the level's lowest y (from the login packet and every respawn into another dimension) */
+  get minY (): number {
+    return (this.bot.game as any)?.minY
+  }
+
+  constructor (private readonly bot: Bot, referenceWorld?: Bot['world']) {
     // this.posCache = {};
 
     this.blockInfos = this.makeLRUCache(100000)
 
-    this.world = referenceWorld
+    this.referenceWorld = referenceWorld
 
     // a new level (a portal, the End's exit, a respawn in another dimension): mineflayer unloads the old level's
     // columns into the same world without a blockUpdate for each block, so what's cached is another level's
     bot.on('worldSwitch' as any, () => this.clearCache())
 
-    referenceWorld.on('blockUpdate', (oldBlock: Block, newBlock: Block) => {
+    const onBlockUpdate = (oldBlock: Block | null, newBlock: Block): void => {
       // console.log(newBlock.position)
       const pos = newBlock.position
       if (this.blockInfos.has(`${pos.x}:${pos.y}:${pos.z}`)) {
         this.blockInfos.set(`${pos.x}:${pos.y}:${pos.z}`, BlockInfo.fromBlock(newBlock))
       }
-    })
+    }
+    // the bot's world's blockUpdate comes on the bot too (blocks.js' listener proxy), whenever the world is made
+    if (referenceWorld != null) referenceWorld.on('blockUpdate', onBlockUpdate)
+    else bot.on('blockUpdate', onBlockUpdate as any)
 
     // this.world.getBlock = fasterGetBlock.bind(this.world)
   }

@@ -219,7 +219,8 @@ export class ThePathfinder {
   reconstructPath = reconstructPath
 
   constructor (private readonly bot: Bot, opts: HandlerOpts = {}) {
-    this.world = opts.world ?? new CacheSyncWorld(bot, bot.world)
+    // the bot's world, read when it's needed: a bot that hasn't logged in has none yet
+    this.world = opts.world ?? new CacheSyncWorld(bot)
     const moveSettings: MovementOptions = {} as MovementOptions
     const pathfinderSettings: PathfinderOptions = {} as PathfinderOptions
     const optimizers = opts.optimizers ?? DEFAULT_OPTIMIZATION
