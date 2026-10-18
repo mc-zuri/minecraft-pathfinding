@@ -494,7 +494,28 @@ export class StraightDownExecutor extends MovementExecutor {
 
     if (this.bot.entity.position.y < thisMove.exitPos.y) throw new CancelError('StraightDown: too low')
 
+    this.steerOverHole(thisMove)
     return tickCount > 0 && this.bot.entity.onGround && this.bot.entity.position.y === thisMove.exitPos.y
+  }
+
+  /** how far off the hole's middle a bot standing over it is walked on to it */
+  public static readonly OVER_HOLE_DIST = 0.1
+
+  /**
+   * The blocks under the bot dug and the bot still standing: its box rests on the edge of a block beside the hole (the
+   * align lets it in 0.2 of the middle, and its momentum carries it on), so it walks on to the middle, where it drops.
+   * Left standing with no key held, it stood there until the no-progress check failed the move (0.204 off the middle
+   * of a hole dug through a jungle tree's leaves).
+   */
+  private steerOverHole (thisMove: Move): void {
+    const pos = this.bot.entity.position
+    const middle = new Vec3(thisMove.exitPos.x, pos.y, thisMove.exitPos.z)
+    const standing = this.bot.entity.onGround && pos.y > thisMove.exitPos.y && this.getRemainingBreaks().length === 0
+    const off = pos.xzDistanceTo(middle) > StraightDownExecutor.OVER_HOLE_DIST
+    if (standing && off) void this.lookAtPathPos(middle)
+    this.bot.setControlState('forward', standing && off)
+    this.bot.setControlState('sprint', false)
+    this.bot.setControlState('sneak', false)
   }
 }
 
