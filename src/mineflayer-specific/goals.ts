@@ -440,11 +440,13 @@ export class GoalLookAt extends Goal {
     const pos = new Vec3(node.x, node.y + this.eyeHeight, node.z)
     const dir = new Vec3(this.x - node.x, this.y - pos.y, this.z - node.z).normalize()
     const raycast = this.world.raycast(pos, dir, this.distance + 3)
-    if (raycast === null) return false
-    const intsec = raycast.intersect
-    if (intsec === null) return false
-    if (intsec.distanceTo(pos) > this.distance) return false
-    return this.bb.containsVec(intsec)
+    const intsec = raycast?.intersect ?? null
+    if (intsec !== null && intsec.distanceTo(pos) <= this.distance && this.bb.containsVec(intsec)) return true
+    // a target with no collision box (sugar cane, grass, a crop; the raycast goes by collision shapes) is never hit:
+    // it is in sight when the ray gets into its box within the distance before it hits anything else
+    const entry = this.bb.distanceFromRay(pos, dir)
+    if (entry === Infinity || entry > this.distance) return false
+    return intsec === null || intsec.distanceTo(pos) >= entry - 1e-6
   }
 
   override async onFinish (node: MovementExecutor): Promise<void> {
