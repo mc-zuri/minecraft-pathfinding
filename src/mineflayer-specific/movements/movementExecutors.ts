@@ -554,7 +554,9 @@ export class StraightUpExecutor extends MovementExecutor {
     const pos = this.bot.entity.position
     const dx = point.x - pos.x
     const dz = point.z - pos.z
-    this.bot.entity.yaw = Math.atan2(-dx, -dz)
+    // the turn as the look: bot.look sets the yawDegrees mineflayer's physics moves by and sends (an entity.yaw set
+    // alone left the bot walking the way it faced before, into the corner of its block, on every block of a tower)
+    void this.bot.look(Math.atan2(-dx, -dz), this.bot.entity.pitch, true)
   }
 
   /**
@@ -764,7 +766,8 @@ export class ParkourForwardExecutor extends MovementExecutor {
 
   private _applyLockedYaw (): void {
     if (this.lockedYaw != null) {
-      this.bot.entity.yaw = this.lockedYaw
+      // (as the look: bot.look sets the yawDegrees the physics moves by, not entity.yaw alone)
+      void this.bot.look(this.lockedYaw, this.bot.entity.pitch, true)
     }
   }
 
