@@ -41,8 +41,6 @@ type RunnerStage = 'idle' | 'align' | 'optimize' | 'init' | 'perform' | 'arrive'
 /** ticks the bot may take to walk the rest of the way onto the path's last block */
 const MAX_ARRIVE_TICKS = 40
 
-const MAX_TASK_TIME_MS = 40
-
 function isNodeRuntime (): boolean {
   return typeof process !== 'undefined' && process.versions?.bun == null
 }
@@ -122,44 +120,28 @@ export class PathExecutor {
     }
   }
 
-  private waitForPromiseSync<T>(label: string, promise: Promise<T>): T {
-    if (!isNodeRuntime()) {
-      void promise.catch((err) => {
-        log(`${label} rejected on a non-Node runtime: %O`, err)
-      })
-      return undefined as T
-    }
-
-    let settled = false
-    let value: T | undefined
-    let error: unknown
-    const start = performance.now()
-
-    promise.then(
-      (result) => {
-        value = result
-        settled = true
-      },
-      (err) => {
-        error = err
-        settled = true
-      }
-    )
+  /**
+   * Runs what a movement tick queued (its microtasks: the awaits of a tick that needs nothing else) in the physics tick
+   * it started in, and waits on for it up to the pathfinder's moveTickBudgetMs. Whether it's done: a tick that waits on
+   * more, a packet (a dig's or a block's) or a later tick (an abort waiting for the bot to land), goes on over the
+   * ticks after, the bot keeping its controls, instead of failing the walk after 40 ms of wall clock (on a loaded
+   * machine, and under a lockstep server whose tick waits on the client's). A wait here holds the event loop, which no
+   * packet or timer gets through, so the default budget is 0.
+   */
+  private runSync (state: { done: boolean }): boolean {
+    if (state.done) return true
+    const tickCallback = (process as NodeJS.Process & { _tickCallback?: () => void })._tickCallback
+    tickCallback?.call(process)
+    const budget = this.host.pathfinderSettings.moveTickBudgetMs ?? 0
+    if (state.done || !(budget > 0)) return state.done
 
     const waitArray = new Int32Array(new SharedArrayBuffer(4))
-    const tickCallback = (process as NodeJS.Process & { _tickCallback?: () => void })._tickCallback
-
-    while (!settled) {
-      if (performance.now() - start > MAX_TASK_TIME_MS) {
-        throw new Error(`PathExecutor ${label} exceeded ${MAX_TASK_TIME_MS}ms`)
-      }
-
+    const start = performance.now()
+    while (!state.done && performance.now() - start < budget) {
       Atomics.wait(waitArray, 0, 0, 1)
       tickCallback?.call(process)
     }
-
-    if (error != null) throw error
-    return value as T
+    return state.done
   }
 
   private findNextCurrentIdx (move: Move, localPath: Move[], currentIndex: number, adding?: boolean | number): number {
@@ -533,10 +515,15 @@ export class PathExecutor {
       }
     }
 
-    const tickInFlight = false
+    // a movement tick still running from an earlier physics tick (runSync)
+    let tickInFlight: { done: boolean } | undefined
 
     const moveListener = (): void => {
-      if (settled || tickInFlight || recoveryInFlight) return
+      if (settled || recoveryInFlight) return
+      if (tickInFlight != null) {
+        if (!this.runSync(tickInFlight)) return
+        tickInFlight = undefined
+      }
       if (runnerStage === 'optimize' || pendingOptimize != null || runnerStage === 'init' || pendingInit != null) {
         return
       }
@@ -557,7 +544,16 @@ export class PathExecutor {
           return
         }
 
-        this.waitForPromiseSync('physicsTick step', runMovementTick())
+        const state = { done: false }
+        runMovementTick().catch((err) => {
+          void fail(err)
+        }).finally(() => {
+          state.done = true
+        })
+        if (!this.runSync(state)) {
+          log('movement tick goes on over the next physics ticks')
+          tickInFlight = state
+        }
       } catch (err) {
         void fail(err)
       }

@@ -62,11 +62,17 @@ const log = debug('minecraft-pathfinding:main')
 export interface PathfinderOptions {
   partialPathProducer: boolean
   partialPathLength: number
+  /**
+   * Wall-clock ms a movement tick may hold the physics tick it runs in for its awaits to finish, past running its
+   * microtasks (default 0); a tick that isn't done by then goes on over the next physics ticks (PathExecutor.runSync)
+   */
+  moveTickBudgetMs?: number
 }
 
 const DEFAULT_PATHFINDER_OPTS: PathfinderOptions = {
   partialPathProducer: false,
-  partialPathLength: 50
+  partialPathLength: 50,
+  moveTickBudgetMs: 0
 }
 
 const EMPTY_VEC = new Vec3(0, 0, 0)

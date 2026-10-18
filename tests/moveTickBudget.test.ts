@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { Vec3 } from 'vec3'
+
+import { createPlugin, goals } from '../src'
+import { Forward } from '../src/mineflayer-specific/movements/movementProviders'
+import { NewForwardExecutor } from '../src/mineflayer-specific/movements/movementExecutors'
+import { createCacheWorld } from './setup'
+
+function withTimeout<T> (promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  return Promise.race([
+    promise.finally(() => { if (timer != null) clearTimeout(timer) }),
+    new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms) })
+  ])
+}
+
+test('a movement tick that waits on the event loop (a packet, a timer) goes on over the next ticks instead of failing the walk after 40 ms', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin())
+  try {
+    let waited = 0
+    // every 5th tick of a Forward move waits 60 ms of wall clock, as a tick on a loaded machine or one awaiting a
+    // server's answer does
+    class SlowForwardExecutor extends NewForwardExecutor {
+      async performPerTick (thisMove: any, tickCount: number, currentIndex: number, path: any[]): Promise<boolean | number> {
+        if (tickCount % 5 === 0) {
+          waited++
+          await new Promise((resolve) => setTimeout(resolve, 60))
+        }
+        return await super.performPerTick(thisMove, tickCount, currentIndex, path)
+      }
+    }
+    rig.bot.pathfinder.setExecutor(Forward, SlowForwardExecutor)
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const goal = new goals.GoalBlock(8, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 20000, 'goto timed out')
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
+    assert.ok(waited > 0)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
