@@ -174,3 +174,25 @@ test('a move whose start (its digs and places before it sets off) never ends fai
     rig.stopPassivePhysics()
   }
 })
+
+test('a dig whose block is gone but whose promise never answers doesn\'t hold the move: it goes on a few ticks later', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  const world = (rig.bot as any).world
+  for (let y = 64; y < 70; y++) for (let z = -30; z <= 30; z++) world.setBlock(new Vec3(3, y, z), y < 66 ? 'dirt' : 'stone')
+  rig.bot.loadPlugin(createPlugin())
+  try {
+    let digs = 0
+    // the block breaks (the server's update comes), the dig's own answer never does
+    rig.bot.dig = async (block: any) => {
+      digs++
+      world.setBlock(block.position, 'air')
+      return await new Promise<void>(() => {})
+    }
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const goal = new goals.GoalNear(5, 64, 0, 1)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, `goto held at ${rig.bot.entity.position} after ${digs} digs`)
+    assert.ok(digs >= 2)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

@@ -16,6 +16,9 @@ import { faceToVec, Task } from '../../utils'
 import { DEFAULT_SETTLE_TICKS, handleBlockEvent, waitForSettledBlockPredicate, toBlockPositionEventName, waitForSettledBlockStateAtPosition } from '../../customBlockEvents'
 
 const debug = require('debug')
+
+/** ticks a dig's promise gets to answer once its block is gone */
+const DIG_ANSWER_TICKS = 20
 const logBase = debug('minecraft-pathfinding:InteractHandler')
 const logPlace = debug('minecraft-pathfinding:PlaceHandler')
 const logBreak = debug('minecraft-pathfinding:BreakHandler')
@@ -630,7 +633,12 @@ export class BreakHandler extends InteractHandler {
         await Promise.race([settled, this._breakTask])
         await settled
 
-        await this._breakTask
+        // the block is gone: the dig's own promise gets a few ticks to answer (mineflayer's diggingCompleted), not
+        // for good (a dig whose answer never came held the move's start until the caller gave up)
+        let answered = false
+        void this._breakTask.then(() => { answered = true }, () => { answered = true })
+        for (let i = 0; i < DIG_ANSWER_TICKS && !answered; i++) await bot.waitForTicks(1)
+        if (answered) await this._breakTask
 
         if (this.task != null) this.task.finish()
         break
