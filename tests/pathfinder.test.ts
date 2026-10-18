@@ -160,3 +160,29 @@ test('getPathTo fails when a one-block tower is required but placement is disabl
     rig.stopPassivePhysics()
   }
 })
+
+test('a parkour jump that lands off its block gives the move up instead of steering on (no walk away from the goal)', async () => {
+  // the End's ground beside a spike (seed endfight, shifted by 40, 0, 3): a one-block step down along x and a notch,
+  // where the plan jumps diagonally from the step's corner over the notch (ParkourDiagonal to 2, 64, 2), aiming at the
+  // landing block's near corner, and the drop carries the bot past it
+  const rig = preparePathRig()
+  const world = (rig.bot as any).world
+  try {
+    for (let x = 3; x <= 12; x++) {
+      for (let z = -6; z <= 8; z++) {
+        if ((x === 3 && z >= 4) || (x === 4 && z >= 6)) continue
+        world.setBlock(new Vec3(x, 64, z), 'stone')
+      }
+    }
+    rig.bot.entity.position = new Vec3(7.5, 65, -0.5)
+    const goal = new goals.GoalBlock(2, 64, 2)
+    const result = await collectPathResult(rig.bot, goal)
+    assert.equal(result.path[result.path.length - 1]?.moveType?.constructor?.name, 'ParkourDiagonal')
+    // it settles (at the goal, or with an error for the caller to plan again) instead of walking on with the locked yaw
+    await withTimeout(rig.bot.pathfinder.goto(goal).catch(() => {}), 20000, 'goto down the step never settled')
+    const at = rig.bot.entity.position
+    assert.ok(Math.hypot(at.x - 2.5, at.z - 2.5) < 4, `goto left the bot at ${at}, away from the goal`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

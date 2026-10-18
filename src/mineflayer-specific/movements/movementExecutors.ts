@@ -692,12 +692,41 @@ export class ParkourForwardExecutor extends MovementExecutor {
   private backupTarget: Vec3 | null = null
   private _lookAtInFlight: Promise<void> | null = null
   private _pendingLookTarget: Vec3 | null = null
+  /** the jump under way left the ground; ticks back on the ground since it landed */
+  private airborneSeen = false
+  private landedTicks = 0
 
   protected static readonly APPROACH_YAW_EPS: number = 0.16 // ~9.2 deg — generous for cardinal jumps
+  /** ticks a landing that missed the move's block may take to walk onto it before the move is given up */
+  protected static readonly LANDED_TICKS_MAX = 10
 
   protected isComplete (startMove: Move, endMove?: Move, opts: CompleteOpts = {}): boolean {
     const ret = super.isComplete(startMove, endMove, opts)
     return ret
+  }
+
+  private _startExecuting (): void {
+    this.executing = true
+    this.airborneSeen = false
+    this.landedTicks = 0
+  }
+
+  /**
+   * After the jump the bot is back on the ground but the move isn't complete: the landing fell short of the block or
+   * carried past it. A few ticks to walk onto it, then the move is given up (the path is planned again from where the
+   * bot stands) rather than steering on with the locked yaw, which walks it away.
+   */
+  private _checkLanding (thisMove: Move): void {
+    if (!this.bot.entity.onGround) {
+      this.airborneSeen = true
+      return
+    }
+    if (!this.airborneSeen) return
+    if (++this.landedTicks <= ParkourForwardExecutor.LANDED_TICKS_MAX) return
+    this.executing = false
+    this._clearLockedYaw()
+    this.bot.clearControlStates()
+    throw new CancelError(`ParkourExecutor: landed off the target at ${this.bot.entity.position.toString()}, not ${thisMove.exitPos.toString()}`)
   }
 
   private _debugLog (...args: any[]): void {
@@ -945,7 +974,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
 
   private _startJumpExecution (target: Vec3): void {
     this.lockedYaw = this._desiredYawTo(target)
-    this.executing = true
+    this._startExecuting()
     this._applySmartControls(target, true)
   }
 
@@ -1007,7 +1036,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
       this._debugJumpState('align', jumpState)
 
       if (fallOffEdge) {
-        this.executing = true
+        this._startExecuting()
         this._lockCurrentYaw(this._desiredYawTo(targetEyeVec))
         this._applySmartControls(targetEyeVec, false)
         return true
@@ -1072,9 +1101,11 @@ export class ParkourForwardExecutor extends MovementExecutor {
 
     if (this.executing) {
       // printBotControls(this.bot, logParkour)
+      if (this.isComplete(thisMove)) return true
+      this._checkLanding(thisMove)
       this._lockCurrentYaw(this._desiredYawTo(targetEyeVec))
       this._applySmartControls(targetEyeVec, false)
-      return this.isComplete(thisMove)
+      return false
     }
 
     const jumpState = this._getJumpState(thisMove)
