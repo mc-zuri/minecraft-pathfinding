@@ -43,7 +43,7 @@ test('a jump up a step beside a pit costs more: the path goes up where nothing d
 test('the hazard cost is a setting: with none the path jumps beside the pit, the shortest way', async () => {
   const rig = stepWithPit(new Vec3(3.5, 64, 0.5))
   try {
-    rig.bot.pathfinder.setMoveOptions({ hazardJumpCost: 0 })
+    rig.bot.pathfinder.setMoveOptions({ hazardJumpCost: 0, edgeHazardCost: 0 })
     let result: any
     for await (const res of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(-3, 65, 0))) result = res.result
     const jump = result.path.find((m: any) => m.moveType.constructor.name === 'ForwardJump')

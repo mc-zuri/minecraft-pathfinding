@@ -34,6 +34,12 @@ export interface MovementOptions {
    * ground within a safe drop next to its start or its landing), which the executor runs up to from a standstill
    */
   hazardJumpCost: number
+  /**
+   * Ticks charged on top for each side of the cell a move ends in that has a deadly fall beside it (Movement.deadlyFall:
+   * lava or fire, or no ground within a safe drop): a knockback, a slide or a step off the line comes down there (a
+   * diagonal across two pits' corners, a ledge over the nether's lava sea). 0 is none
+   */
+  edgeHazardCost: number
 
   forceLook: boolean
   /** go through closed wooden doors, fence gates and trapdoors by opening them (the iron ones are walls) */
@@ -115,6 +121,9 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   velocityKillCost: 2, // implement at a later date.
   // a jump by a deadly drop: a stop and a standing jump, and any other way that's a few blocks longer before it
   hazardJumpCost: 20,
+  // a ledge by a deadly drop: a block or two round before a walk along it (more widens the search: the A* looks at
+  // every node cheaper than the path it finds)
+  edgeHazardCost: 4,
   forceLook: true,
   careAboutLookAlignment: true,
   allowDiagonalBridging: true,
@@ -352,6 +361,27 @@ export abstract class Movement {
    */
   travelCost (blocks: number): number {
     return blocks * (this.settings.allowSprinting ? SPRINT_ONE_BLOCK_COST : WALK_ONE_BLOCK_COST)
+  }
+
+  /**
+   * Extra cost of ending a move in this block: the step exclusion areas (exclusionStep) and its deadly edges
+   * (edgeHazard)
+   */
+  standCost (block: BlockInfo): number {
+    return this.exclusionStep(block) + this.edgeHazard(block)
+  }
+
+  /**
+   * edgeHazardCost for each of the four sides of the cell (its feet's block) with a deadly fall beside it (deadlyFall
+   * from the feet's level down): a player knocked back (LivingEntity.knockback), sliding on, or drifting off the
+   * line of a walk goes over that side
+   */
+  edgeHazard (block: BlockInfo): number {
+    const cost = this.settings.edgeHazardCost
+    if (!(cost > 0)) return 0
+    let sides = 0
+    for (const dir of Movement.cardinalDirs) if (this.deadlyFall(block.position, dir.x, 0, dir.z)) sides++
+    return sides * cost
   }
 
   /** Extra cost of STANDING in this block (sum of every step exclusion area; 0 if none). */

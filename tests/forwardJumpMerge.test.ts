@@ -34,8 +34,8 @@ function stepByPit (start: Vec3) {
 test('a jump up a step is not merged with the moves after it over a line that leaves the step\'s ground (a pit beside it)', async () => {
   const rig = stepByPit(new Vec3(4.5, 64, 0.5))
   try {
-    // (the jump beside the pit, the way the run went: the cost a jump by a drop has on top left out)
-    rig.bot.pathfinder.setMoveOptions({ hazardJumpCost: 0 })
+    // (the jump beside the pit, the way the run went: the costs a jump and a step by a drop have on top left out)
+    rig.bot.pathfinder.setMoveOptions({ hazardJumpCost: 0, edgeHazardCost: 0 })
     let result: any
     for await (const res of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(-4, 65, -3))) result = res.result
     assert.equal(result.status, 'success')

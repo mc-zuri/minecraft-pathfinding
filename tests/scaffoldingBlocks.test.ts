@@ -76,7 +76,8 @@ test('26.3: a bridge over lava with netherrack alone: the search plans it, and g
 })
 
 test('26.3: the search\'s budget counts the netherrack: ten (less the reserve, six) bridge five blocks of lava, eight don\'t', async () => {
-  const enough = rigWith([['netherrack', 10]])
+  // (the bridge's cells by the lava cost no more than others here, edgeHazardCost 0: the search ends well inside its time)
+  const enough = rigWith([['netherrack', 10]], { edgeHazardCost: 0 })
   try {
     assert.equal(getScaffoldCount(enough.bot as any, enough.bot.pathfinder.defaultMoveSettings), 10)
     lavaStrip(enough, 5, 60)
@@ -86,7 +87,7 @@ test('26.3: the search\'s budget counts the netherrack: ten (less the reserve, s
   } finally {
     enough.stopPassivePhysics()
   }
-  const short = rigWith([['netherrack', 8]])
+  const short = rigWith([['netherrack', 8]], { edgeHazardCost: 0 })
   try {
     lavaStrip(short, 5, 60)
     const res = await search(short, new goals.GoalBlock(8, 64, 0))
