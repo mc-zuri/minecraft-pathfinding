@@ -227,7 +227,10 @@ export class BlockInfo {
   static fromBlock (b: Block | null): BlockInfo {
     if (b === null) return BlockInfo.INVALID
 
-    if (b.boundingBox === 'block') {
+    // a state with no collision shape is walked through whatever its block's box is (an open fence gate:
+    // FenceGateBlock.getCollisionShape is empty when open; a tilted big dripleaf): minecraft-data gives the box per
+    // block, the shapes per state
+    if (b.boundingBox === 'block' && b.shapes.length > 0) {
       let height = b.position.y
 
       if (b.shapes.length === 1) height = b.position.y + b.shapes[0][4]
