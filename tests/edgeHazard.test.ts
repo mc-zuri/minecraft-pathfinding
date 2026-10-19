@@ -123,3 +123,61 @@ test('a diagonal across the corners of two lava shafts is not taken when a way r
     rig.stopPassivePhysics()
   }
 })
+
+/** the optimizer's runs of a path (Forward and Diagonal runs merged into straight lines: LandStraightAheadOpt) */
+async function optimized (rig: any, path: any[]): Promise<any[]> {
+  const { Optimizer } = await import('../src/mineflayer-specific/post')
+  const optimizer = new Optimizer(rig.bot as any, rig.bot.pathfinder.world, rig.bot.pathfinder.getActiveMappings().optimizers)
+  optimizer.loadPath(path)
+  return await optimizer.compute()
+}
+
+/** the cells at the feet's level the straight lines of the runs cross, sampled every 0.1 of a block */
+function runCells (runs: any[]): Vec3[] {
+  const out: Vec3[] = []
+  for (const run of runs) {
+    const a = run.entryPos.floored().offset(0.5, 0, 0.5)
+    const b = run.exitPos
+    const n = Math.max(1, Math.ceil(a.distanceTo(b) * 10))
+    for (let i = 0; i <= n; i++) out.push(a.plus(b.minus(a).scaled(i / n)).floored())
+  }
+  return out
+}
+
+test('the straight lines the optimizer merges a path into keep off the cells it went round: a soft exclusion zone, a ledge\'s edge', async () => {
+  // a soft zone (40 a cell) on the straight way from (0, 64, 0) to (16, 64, 0), round x 8, a way round it either side
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 0.5)).rig
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { partialPathProducer: false, partialPathLength: 50 } }))
+  try {
+    const inZone = (p: { x: number, z: number }): boolean => Math.abs(p.x - 8) <= 2 && Math.abs(p.z) <= 2
+    const zone = (block: any): number => inZone(block.position) ? 40 : 0
+    rig.bot.pathfinder.setMoveOptions({ canPlace: false, canDig: false, exclusionAreasStep: [zone as any] })
+    const result = await planTo(rig.bot, new goals.GoalBlock(16, 64, 0))
+    assert.equal(result.status, 'success')
+    assert.ok(result.path.every((m: any) => !inZone(m.exitPos.floored())), 'the search went through the zone')
+    const runs = await optimized(rig, result.path)
+    const crossed = runCells(runs).filter(inZone)
+    assert.equal(crossed.length, 0, `a run's straight line crosses the zone at ${crossed[0]?.toString()}: ${runs.map((r: any) => `${r.entryPos.floored()} > ${r.exitPos.floored()}`).join(', ')}`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+
+  // a ledge three wide (z -1 to 1) over the void from x -4 to 20: from (0, 64, 1) to (16, 64, 1), along its south edge,
+  // the path goes along its middle (z 0, no void beside it), and the lines it's merged into keep to it
+  const ledge = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 1.5)).rig
+  ledge.bot.loadPlugin(createPlugin({ pathfinderSettings: { partialPathProducer: false, partialPathLength: 50 } }))
+  const world = (ledge.bot as any).world
+  try {
+    for (let x = -6; x <= 22; x++) for (let z = -8; z <= 8; z++) if (Math.abs(z) > 1 || x < -4 || x > 20) world.setBlock(new Vec3(x, 63, z), 'air')
+    ledge.bot.pathfinder.setMoveOptions({ canPlace: false, canDig: false })
+    const result = await planTo(ledge.bot, new goals.GoalBlock(16, 64, 1))
+    assert.equal(result.status, 'success')
+    const along = result.path.slice(1, -1)
+    assert.ok(along.every((m: any) => Math.floor(m.exitPos.z) === 0), `the path keeps to the edge: ${result.path.map((m: any) => m.exitPos.floored().toString()).join(' ')}`)
+    const runs = await optimized(ledge, result.path)
+    const edge = runCells(runs).filter(c => c.z === 1 && c.x > 1 && c.x < 15)
+    assert.equal(edge.length, 0, `a run's straight line goes along the edge at ${edge[0]?.toString()}: ${runs.map((r: any) => `${r.entryPos.floored()} > ${r.exitPos.floored()}`).join(', ')}`)
+  } finally {
+    ledge.stopPassivePhysics()
+  }
+})

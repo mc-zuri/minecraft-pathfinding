@@ -17,17 +17,10 @@ const debug = require('debug')
 const log = debug('minecraft-pathfinding:optimizers')
 
 /**
- * Walk the straight segment from `from` to `to` with a voxel traversal
- * (Amanatides & Woo) and return true as soon as a cell lands inside a HARD step
- * zone (summed weight >= COST_INF). Visiting exactly the cells the segment
- * crosses keeps the check correct (no skipped cells) and cheap.
- *
- * Only hard zones stop a straight-line merge; soft zones are a preference, not a
- * wall. Returns false immediately when there are no step areas.
+ * The cells the straight segment from `from` to `to` crosses, in order, by a voxel traversal (Amanatides & Woo):
+ * exactly those, none skipped; `visit` returning true stops it there, and the traversal returns true.
  */
-export function lineCrossesHardExclusion (world: World, from: Vec3, to: Vec3, areas: ExclusionArea[]): boolean {
-  if (areas.length === 0) return false
-
+function someCellOnLine (from: Vec3, to: Vec3, visit: (x: number, y: number, z: number) => boolean): boolean {
   let x = Math.floor(from.x)
   let y = Math.floor(from.y)
   let z = Math.floor(from.z)
@@ -58,7 +51,7 @@ export function lineCrossesHardExclusion (world: World, from: Vec3, to: Vec3, ar
   const cells = Math.abs(endX - x) + Math.abs(endY - y) + Math.abs(endZ - z)
 
   for (let i = 0; i <= cells; i++) {
-    if (sumExclusionAreas(areas, world.getBlockInfo(new Vec3(x, y, z))) >= COST_INF) return true
+    if (visit(x, y, z)) return true
 
     if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
       x += stepX
@@ -74,11 +67,44 @@ export function lineCrossesHardExclusion (world: World, from: Vec3, to: Vec3, ar
   return false
 }
 
+/**
+ * Walk the straight segment from `from` to `to` with a voxel traversal
+ * (Amanatides & Woo) and return true as soon as a cell lands inside a HARD step
+ * zone (summed weight >= COST_INF). Visiting exactly the cells the segment
+ * crosses keeps the check correct (no skipped cells) and cheap.
+ *
+ * Only hard zones stop a straight-line merge; soft zones are a preference, not a
+ * wall. Returns false immediately when there are no step areas.
+ */
+export function lineCrossesHardExclusion (world: World, from: Vec3, to: Vec3, areas: ExclusionArea[]): boolean {
+  if (areas.length === 0) return false
+  return someCellOnLine(from, to, (x, y, z) => sumExclusionAreas(areas, world.getBlockInfo(new Vec3(x, y, z))) >= COST_INF)
+}
+
+/**
+ * Whether the straight segment from `from` to `to` crosses a cell that costs more to stand in (`standCost`: the step
+ * exclusions and a deadly edge's cost, Movement.standCost) than the route it would replace went through: a hard one,
+ * or one with any extra cost that isn't one of the route's own cells (`route`, "x,y,z" keys). The A* went round a soft
+ * zone or a ledge's edge a block or two; the line cut back across it.
+ */
+export function lineCrossesCostlier (world: World, from: Vec3, to: Vec3, standCost: (block: BlockInfo) => number, route: Set<string>): boolean {
+  return someCellOnLine(from, to, (x, y, z) => {
+    const cost = standCost(world.getBlockInfo(new Vec3(x, y, z)))
+    return cost >= COST_INF || (cost > 0 && !route.has(`${x},${y},${z}`))
+  })
+}
+
 export class LandStraightAheadOpt extends MovementOptimizer {
   async identEndOpt (currentIndex: number, path: Move[]): Promise<number> {
     const startIndex = currentIndex
     const thisMove = path[currentIndex] // starting move
     const stepAreas = thisMove.moveType.settings.exclusionAreasStep
+    // what a cell costs to stand in (Movement.standCost), and the cells the moves merged went through
+    const standCost: ((block: BlockInfo) => number) | undefined = typeof (thisMove.moveType as any).standCost === 'function'
+      ? (block: BlockInfo) => (thisMove.moveType as any).standCost(block)
+      : undefined
+    const cellKey = (p: Vec3): string => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`
+    const route = new Set<string>([cellKey(thisMove.entryPos), cellKey(thisMove.exitPos)])
 
     let lastMove = path[currentIndex]
     let nextMove = path[++currentIndex]
@@ -164,10 +190,13 @@ export class LandStraightAheadOpt extends MovementOptimizer {
         return --currentIndex
       }
 
-      // Exclusion zones: do not straight-line the merge through a hard "keep out"
-      // area the original route went around. Stop before this move if it would.
-      if (lineCrossesHardExclusion(this.world, orgPos, nextMove.exitPos, stepAreas)) {
-        log(`[LandStraightAhead] Index ${currentIndex}: straight line would cross a hard exclusion zone.`)
+      // Exclusion zones and deadly edges: do not straight-line the merge through a hard "keep out" area the
+      // original route went around, nor across a cell costlier to stand in (a soft zone, a ledge's edge) that the
+      // route kept off. Stop before this move if it would.
+      route.add(cellKey(nextMove.exitPos))
+      if (lineCrossesHardExclusion(this.world, orgPos, nextMove.exitPos, stepAreas) ||
+        (standCost != null && lineCrossesCostlier(this.world, orgPos, nextMove.exitPos, standCost, route))) {
+        log(`[LandStraightAhead] Index ${currentIndex}: straight line would cross an exclusion zone or a deadly edge the route went round.`)
         return --currentIndex
       }
 
