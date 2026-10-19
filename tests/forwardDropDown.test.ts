@@ -45,3 +45,29 @@ test('a ForwardDropDown of two blocks that starts while the bot aligns, at the l
     rig.stopPassivePhysics()
   }
 })
+
+test('a drop of two off a platform two high, three wide, is a ForwardDropDown to the floor (the rig\'s level bottom is the dimension\'s, not the floor)', { timeout: 30000 }, async () => {
+  // the flat floor's top at 63 (the feet at 64), a platform x -2 to 2, z 0 to 2, two blocks high on it (the feet at 66)
+  const { rig } = createCacheWorld('1.21.11', 64, new Vec3(0.5, 66, 1.5))
+  const bot: any = rig.bot
+  try {
+    for (let x = -2; x <= 2; x++) for (let z = 0; z <= 2; z++) for (const y of [64, 65]) bot.world.setBlock(new Vec3(x, y, z), 'stone')
+    // as mineflayer's login packet gives it: the overworld's min_y
+    assert.equal(bot.game.minY, -64)
+    bot.loadPlugin(createPlugin({ pathfinderSettings: { partialPathProducer: false, searchTimeoutMs: 8000 } } as any))
+    const settings = { ...bot.pathfinder.defaultMoveSettings, canDig: false, canPlace: false }
+    bot.pathfinder.setMoveOptions(settings)
+    // the provider's own landing: from the platform's -z edge, the cell over the floor two blocks down
+    const provider = new ForwardDropDown(bot, bot.pathfinder.world, settings)
+    const start = Move.startMove(provider, new Vec3(0.5, 66, 0.5), new Vec3(0, 0, 0), 1000)
+    const out: Move[] = []
+    provider.provideMovements(start, out, new goals.GoalBlock(0, 64, -4), new Set())
+    assert.deepEqual(out.map(m => `${m.x},${m.y},${m.z}`), ['0,64,-1'])
+    for (let i = 0; i < 40 && bot.entity.onGround !== true; i++) await new Promise(resolve => setTimeout(resolve, 50))
+    await withTimeout(bot.pathfinder.goto(new goals.GoalBlock(0, 64, -4)), 20000, `timed out at ${bot.entity.position}`)
+    // (before: no path, the bot still on the platform at (0.5, 66, 1.5))
+    assert.ok(bot.entity.position.distanceTo(new Vec3(0.5, 64, -3.5)) < 1.2, `at ${bot.entity.position.toString()}`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

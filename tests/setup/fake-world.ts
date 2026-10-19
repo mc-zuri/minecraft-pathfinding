@@ -60,7 +60,8 @@ function createBlockAt(
   return block as unknown as Block
 }
 
-function getChunkVerticalBounds(mcData: ReturnType<typeof registry>): { minY: number, worldHeight: number } {
+/** the level's height range for a version (DimensionType's overworld min_y and height: -64 and 384 from 1.18) */
+export function getChunkVerticalBounds(mcData: ReturnType<typeof registry>): { minY: number, worldHeight: number } {
   if (mcData.version['>=']('1.18')) {
     return { minY: -64, worldHeight: 384 }
   }

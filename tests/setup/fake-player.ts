@@ -5,6 +5,7 @@ import type { Item } from 'prismarine-item'
 
 import type { Block, PlaceBlockOptions, RayType } from '../../src/types'
 import type { World } from '../../src/mineflayer-specific/world/worldInterface'
+import { getChunkVerticalBounds } from './fake-world'
 
 const QUICK_BAR_START = 36
 const QUICK_BAR_COUNT = 9
@@ -413,7 +414,9 @@ export function createFakePlayer(
     version,
     world,
     registry: mcData,
-    game: { gameMode: 'survival', dimension: 'overworld', minY: groundLevel },
+    // the level's bottom, as mineflayer's login packet gives it (the dimension's min_y), not the flat floor: the drop
+    // providers search down to it (DropDownProvider.getLandingBlock with infiniteLiquidDropdownDistance)
+    game: { gameMode: 'survival', dimension: 'overworld', minY: getChunkVerticalBounds(mcData).minY },
     inventory,
     equipment: Array(6).fill(null),
     QUICK_BAR_START,
