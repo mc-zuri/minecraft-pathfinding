@@ -194,6 +194,9 @@ export class MovementHandler implements AMovementProvider<Move> {
   private readonly indexZ = new Int16Array(this.maxBound)
   private readonly seenMarks = new Uint32Array(this.maxBound)
   private seenStamp = 0
+  /** the cells preloadInteractData set from the last node's moves (their breaks and places), in that node's frame */
+  private readonly interactIdx = new Int32Array(this.maxBound)
+  private interactCount = 0
 
   private initIndexCoordinates (): void {
     for (let idx = 0; idx < this.maxBound; idx++) {
@@ -207,6 +210,18 @@ export class MovementHandler implements AMovementProvider<Move> {
 
   resetLocalData (): void {
     this.localData.fill(null)
+    this.interactCount = 0
+  }
+
+  /**
+   * Forgets the cells the last node's moves broke or placed (preloadInteractData): they are that node's branch of the
+   * search, not the world, and the next node may be on another branch, where the block is still there. Kept, a block
+   * one branch dug was air to every node expanded after it, and a Forward broke only its feet block, pressing into
+   * the stone at its head.
+   */
+  private clearInteractData (): void {
+    for (let i = 0; i < this.interactCount; i++) this.localData[this.interactIdx[i]] = null
+    this.interactCount = 0
   }
 
   // Do not reassign localData, must do shift in place.
@@ -293,6 +308,7 @@ export class MovementHandler implements AMovementProvider<Move> {
           if (this.seenMarks[idx] !== seenStamp) {
             this.localData[idx] = m.blockInfo
             this.seenMarks[idx] = seenStamp
+            this.interactIdx[this.interactCount++] = idx
           }
         }
       }
@@ -311,6 +327,7 @@ export class MovementHandler implements AMovementProvider<Move> {
           if (this.seenMarks[idx] !== seenStamp) {
             this.localData[idx] = m.blockInfo
             this.seenMarks[idx] = seenStamp
+            this.interactIdx[this.interactCount++] = idx
           }
         }
       }
@@ -325,6 +342,7 @@ export class MovementHandler implements AMovementProvider<Move> {
     // console.log('hi')
     const pos = currentMove.entryPos.floored()
     const old = this.lastPos ?? pos
+    this.clearInteractData()
     this.shiftLocalData(old, pos)
     this.preloadInteractData(pos, currentMove)
     this.lastPos = pos
