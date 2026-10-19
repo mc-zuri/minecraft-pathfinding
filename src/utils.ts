@@ -134,6 +134,21 @@ export function getSupportedStartPos (world: World, startPos: Vec3): Vec3 {
 
   const current = world.getBlockInfo(pos)
 
+  // stood on the top of a block more than half a block high but lower than a full one (farmland and a path block,
+  // 15/16; soul sand, mud and a chest, 7/8): the feet are in its cell, and the start node floored there was in it (or
+  // in the water beside it the bot's middle was over), a floor to dig through (a bot on its farm dug its farmland and
+  // the grass beside it) or no path at all. The node is the cell over it, as a move onto such a block ends (a floor
+  // like a full one), in that block's column
+  const inside = (v: number, lo: number): number => Math.min(Math.max(v, lo + 0.001), lo + 0.999)
+  if (pos.y - Math.floor(pos.y) > 0.5) {
+    for (const [dx, dz] of [[0, 0], [-0.3, -0.3], [-0.3, 0.3], [0.3, -0.3], [0.3, 0.3]]) {
+      const under = world.getBlockInfo(pos.offset(dx, 0, dz))
+      if (!under.physical || under.liquid || under.climbable || Math.abs(under.height - pos.y) > 1e-3) continue
+      const col = under.position
+      return new Vec3(dx === 0 ? pos.x : inside(pos.x, col.x), col.y + 1, dz === 0 ? pos.z : inside(pos.z, col.z))
+    }
+  }
+
   if (current.physical || current.climbable || current.liquid) {
     return pos
   }
@@ -169,7 +184,6 @@ export function getSupportedStartPos (world: World, startPos: Vec3): Vec3 {
   // the bot's own point when it's over the supporting block, else the nearest point in that block's column: the start
   // node's floor is the support's, and the first move starts where the bot stands, not at the block's corner (a
   // bot that had to walk to the corner first can't in a 1×1 shaft, and aligned for good)
-  const inside = (v: number, lo: number): number => Math.min(Math.max(v, lo + 0.001), lo + 0.999)
   return new Vec3(inside(pos.x, best.x), pos.y, inside(pos.z, best.z))
 }
 
