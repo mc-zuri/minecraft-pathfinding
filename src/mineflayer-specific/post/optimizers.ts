@@ -133,6 +133,7 @@ export class LandStraightAheadOpt extends MovementOptimizer {
     ]
 
     while (lastMove.exitPos.y === orgY && nextMove.exitPos.y === orgY) {
+      await this.clock?.due()
       if (!AABB.fromBlockPos(nextMove.entryPos).collides(AABB.fromBlockPos(nextMove.exitPos))) {
         log(`[LandStraightAhead] Index ${currentIndex}: AABB collision failed between entry and exit.`)
         return --currentIndex

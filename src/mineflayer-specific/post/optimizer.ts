@@ -12,10 +12,30 @@ const debug = require('debug')
 const log = debug('minecraft-pathfinding:Optimizer')
 const logMerge = debug('minecraft-pathfinding:Optimizer:merge')
 
+/**
+ * The optimizer's clock: once a slice of its work has run `budgetMs` (the pathfinder's searchTickBudgetMs), due() lets
+ * the event loop through before it goes on. A straight run of 300 moves was merged in one go in a second (each move
+ * on it raycasts the line back to the run's start), and the partial path producer's path is optimized again each time
+ * it grows: the process held, the lockstep server's ticks unacked meanwhile.
+ */
+export class SliceClock {
+  private start = performance.now()
+
+  constructor (public budgetMs: number) {}
+
+  async due (): Promise<void> {
+    if (performance.now() - this.start < this.budgetMs) return
+    await new Promise<void>((resolve) => typeof setImmediate === 'function' ? setImmediate(resolve) : setTimeout(resolve, 0))
+    this.start = performance.now()
+  }
+}
+
 export abstract class MovementOptimizer {
   bot: Bot
   world: World
   sim: BaseSimulator
+  /** the optimizer's clock while it runs this one (Optimizer.compute): a long identEndOpt waits on due() */
+  clock?: SliceClock
 
   public readonly mergeInteracts: boolean = true
 
@@ -100,10 +120,12 @@ export class Optimizer {
 
   private pathCopy!: Move[]
   private currentIndex: number
+  readonly clock: SliceClock
 
   constructor (bot: Bot, world: World, optMap: OptimizationMap) {
     this.currentIndex = 0
     this.optMap = optMap
+    this.clock = new SliceClock((bot as any).pathfinder?.pathfinderSettings?.searchTickBudgetMs ?? 40)
   }
 
   loadPath (path: Move[]): void {
@@ -125,6 +147,7 @@ export class Optimizer {
     log(`compute() started. Iterating over path of length ${this.pathCopy.length}.`)
 
     while (this.currentIndex < this.pathCopy.length) {
+      await this.clock.due()
       const move = this.pathCopy[this.currentIndex]
       const opts = this.optMap.get(move.moveType.constructor as BuildableMoveProvider)
 
@@ -138,6 +161,7 @@ export class Optimizer {
 
       for (const opt of opts) {
         log(`[Index ${this.currentIndex}] Evaluating ${move.moveType.constructor.name} using ${opt.optimizer.constructor.name} (priority ${opt.priority})...`)
+        opt.optimizer.clock = this.clock
         const newEnd = this.doorwayBound(this.currentIndex, await opt.optimizer.identEndOpt(this.currentIndex, this.pathCopy))
 
         if (newEnd > this.currentIndex) {
