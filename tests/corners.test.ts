@@ -79,3 +79,32 @@ test('canStartNext checks the line to the end of the move that runs next (an opt
     rig.stopPassivePhysics()
   }
 })
+
+test('two moves round a corner aren\'t merged into one straight walk when the corner\'s block is in the way of the bot\'s box (the straight-ahead optimizer\'s raycasts hit it)', async () => {
+  const rig = createCacheWorld('1.20.4', 65, new Vec3(0.5, 65, 0.5)).rig
+  rig.bot.loadPlugin(createPlugin())
+  const world = (rig.bot as any).world
+  try {
+    // a mined tunnel two high in stone: (0, 0) and (1, 0) along x, then north from (1, 0) to (1, -2) (a play run's on
+    // 26.3, seed 1234567890, after an item at (1, -1))
+    const open = new Set(['0,0', '1,0', '1,-1', '1,-2'])
+    for (let x = -3; x <= 4; x++) {
+      for (let z = -4; z <= 3; z++) {
+        for (let y = 65; y <= 67; y++) world.setBlock(new Vec3(x, y, z), open.has(`${x},${z}`) && y < 67 ? 'air' : 'stone')
+      }
+    }
+    // in the tunnel's first cell, against its north wall: the straight line from (0, 0) to (1, -1) was taken for clear,
+    // as each ray hit (0, 65, -1) at a block corner farther from the start than the line's end, and the bot walked
+    // into the corner of that block until the walk ended short of the goal (five times over at one item)
+    rig.bot.entity.position = new Vec3(0.702, 65, 0.3)
+    let ticks = 0
+    rig.bot.on('physicsTick', () => { ticks++ })
+    const goal = new goals.GoalBlock(1, 65, -1)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, `goto timed out at ${rig.bot.entity.position}`)
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `ended at ${at}`)
+    assert.ok(ticks < 40, `${ticks} ticks`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

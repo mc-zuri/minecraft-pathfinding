@@ -130,9 +130,8 @@ export class LandStraightAheadOpt extends MovementOptimizer {
           (block) => (!BlockInfo.replaceables.has(block.type) || BlockInfo.liquids.has(block.type) || BlockInfo.blocksToAvoid.has(block.type)) && block.shapes.length > 0
         ) as unknown as RayType | null
 
-        const valid0 = (raycast0 == null) || raycast0.position.distanceTo(orgPos) > dist
-
-        if (!valid0) {
+        // (the ray's range is the segment: a hit is in the way, wherever its block's corner is)
+        if (raycast0 != null) {
           log(`[LandStraightAhead] Index ${currentIndex}: Block check raycast hit an obstacle at ${raycast0.position}.`)
           return --currentIndex
         }
@@ -152,7 +151,7 @@ export class LandStraightAheadOpt extends MovementOptimizer {
           (block) => BlockInfo.replaceables.has(block.type) || BlockInfo.liquids.has(block.type) || block.shapes.length === 0
         )) as unknown as RayType | null
 
-        const valid0 = (raycast0 == null) || raycast0.shapes.length > 0 || raycast0.position.distanceTo(orgPos) > dist
+        const valid0 = (raycast0 == null) || raycast0.shapes.length > 0
 
         if (valid0) validCount++
       }
