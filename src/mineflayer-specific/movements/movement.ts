@@ -4,7 +4,8 @@ import { Vec3 } from 'vec3'
 import { Move } from '../move'
 import { World } from '../world/worldInterface'
 import { BlockInfo } from '../world/cacheWorld'
-import { BreakHandler, InteractHandler, PlaceHandler } from './interactionUtils'
+import { BreakHandler, InteractHandler, OpenHandler, PlaceHandler } from './interactionUtils'
+import { clearToFace, PassagePart } from '../world/passages'
 import type { InteractType } from './interactionUtils'
 import type { Block } from '../../types'
 import { Vec3Properties } from '../../types'
@@ -29,7 +30,10 @@ export interface MovementOptions {
   velocityKillCost: number
 
   forceLook: boolean
+  /** go through closed wooden doors, fence gates and trapdoors by opening them (the iron ones are walls) */
   canOpenDoors: boolean
+  /** ticks charged for opening a door, gate or trapdoor (a stop, a look and a right click the server answers) */
+  openCost: number
   canDig: boolean
   canPlace: boolean
   dontCreateFlow: boolean
@@ -65,6 +69,7 @@ export interface MovementOptions {
 export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowJumpSprint: true,
   canOpenDoors: true,
+  openCost: 5,
   canDig: true,
   canPlace: true,
   dontCreateFlow: true,
@@ -351,6 +356,10 @@ export abstract class Movement {
 
     if (block.block === null) return COST_INF // Don't know its type, but that's only replaceables so just return.
 
+    // a door, gate or trapdoor is gone through by its shapes or opened (safeOrOpen), never dug: it is part of
+    // someone's house or pen
+    if (block.passage != null) return COST_INF
+
     if (!this.safeToBreak(block)) return COST_INF // Can't break, so can't move
 
     const cost = this.breakCost(block)
@@ -364,6 +373,29 @@ export abstract class Movement {
     toBreak.push(BreakHandler.fromVec(block.position, 'solid'))
 
     return cost
+  }
+
+  /**
+   * Cost of the player's box going through a cell of a door, fence gate or trapdoor (`part`: the feet's cell or the
+   * head's), moving `dir` (a cardinal): into it, from the face behind to its middle (`enter`), or out of it, from its
+   * middle by the face ahead (`leave`). 0 when its state's collision shapes leave the box room (an open door's panel
+   * along a side, an open gate); when a right click opens it so they do, the open cost, with an OpenHandler pushed to
+   * toBreak (one per door: its other half opens with it); else (an iron door, a closed one with canOpenDoors off)
+   * COST_INF. A cell of any other block: safeOrBreak to go into it, 0 to leave it.
+   */
+  safeOrOpen (block: BlockInfo, dir: Vec3Properties, part: PassagePart, how: 'enter' | 'leave', toBreak: BreakHandler[]): number {
+    if (block.passage == null) return how === 'enter' ? this.safeOrBreak(block, toBreak) : 0
+    const faceX = how === 'enter' ? -dir.x : dir.x
+    const faceZ = how === 'enter' ? -dir.z : dir.z
+    if (clearToFace(block.shapes, faceX, faceZ, part)) return 0
+    if (!this.settings.canOpenDoors || !BlockInfo.openable.has(block.type)) return COST_INF
+    const target = block.toggled()
+    if (target == null || !clearToFace(target.shapes, faceX, faceZ, part)) return COST_INF
+    // a door's two halves open with one click (DoorBlock.setOpen sets both): the second costs nothing more
+    const sameDoor = block.passage === 'door' && toBreak.some((h) => h instanceof OpenHandler && h.x === block.position.x &&
+      h.z === block.position.z && Math.abs(h.y - block.position.y) === 1)
+    toBreak.push(new OpenHandler(block.position.x, block.position.y, block.position.z, target, faceX, faceZ, part, how, dir.x, dir.z))
+    return sameDoor ? 0 : this.settings.openCost
   }
 
   /**

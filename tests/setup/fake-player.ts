@@ -348,6 +348,35 @@ export function createFakePlayer(
     fakePlayer.emit('blockPlaced', oldBlock, newBlock)
   }
 
+  // The server's answer to a right click on a door, fence gate or trapdoor, on the next tick (DoorBlock, FenceGateBlock
+  // and TrapDoorBlock.useWithoutItem): `open` flips, both of a door's halves; a gate opened from the side it faces
+  // turns to face the player's way; the iron ones stay as they are (BlockSetType.IRON.canOpenByHand false).
+  const PBlock = require('prismarine-block')(mcData)
+  function toggleBlock(pos: Vec3): void {
+    const block = world.getBlock(pos) as any
+    if (block == null || !/(door|fence_gate)$/.test(block.name) || block.name.startsWith('iron_')) return
+    const props = block.getProperties()
+    const next: Record<string, unknown> = { ...props, open: !props.open }
+    if (block.name.endsWith('fence_gate') && !props.open) {
+      const view = getViewDirection(0, fakePlayer.entity.yaw)
+      const facing = Math.abs(view.x) > Math.abs(view.z) ? (view.x > 0 ? 'east' : 'west') : (view.z > 0 ? 'south' : 'north')
+      const opposite: Record<string, string> = { north: 'south', south: 'north', east: 'west', west: 'east' }
+      if (props.facing === opposite[facing]) next.facing = facing
+    }
+    world.setBlock(pos, PBlock.fromProperties(block.name, next, 0).stateId)
+    if (/(^|_)door$/.test(block.name) && !/trap_?door$/.test(block.name)) {
+      const other = pos.offset(0, props.half === 'lower' ? 1 : -1, 0)
+      const half = world.getBlock(other) as any
+      if (half?.name === block.name) world.setBlock(other, PBlock.fromProperties(block.name, { ...half.getProperties(), open: next.open }, 0).stateId)
+    }
+  }
+
+  async function activateBlock(block: Block, _direction?: Vec3, _cursor?: Vec3): Promise<void> {
+    const pos = block.position.clone()
+    fakePlayer.activatedBlocks.push(pos)
+    fakePlayer.once('physicsTick', () => toggleBlock(pos))
+  }
+
   function activateItem(_offhand = false): void {
     fakePlayer.usingHeldItem = true
   }
@@ -423,6 +452,8 @@ export function createFakePlayer(
     unequip,
     updateHeldItem,
     activateItem,
+    activateBlock,
+    activatedBlocks: [] as Vec3[],
     dig,
     stopDigging,
     digTime,

@@ -5,6 +5,7 @@ import type { BuildableMoveProvider } from '../movements'
 import { MovementProvider } from '../movements'
 import { World } from '../world/worldInterface'
 import { Move } from '../move'
+import { OpenHandler } from '../movements/interactionUtils'
 import { BaseSimulator, BotcraftPhysics } from '@nxg-org/mineflayer-physics-util'
 
 const debug = require('debug')
@@ -137,7 +138,7 @@ export class Optimizer {
 
       for (const opt of opts) {
         log(`[Index ${this.currentIndex}] Evaluating ${move.moveType.constructor.name} using ${opt.optimizer.constructor.name} (priority ${opt.priority})...`)
-        const newEnd = await opt.optimizer.identEndOpt(this.currentIndex, this.pathCopy)
+        const newEnd = this.doorwayBound(this.currentIndex, await opt.optimizer.identEndOpt(this.currentIndex, this.pathCopy))
 
         if (newEnd > this.currentIndex) {
           log(`[Index ${this.currentIndex}] Optimizer identified mergable sequence ending at index ${newEnd}.`)
@@ -165,6 +166,21 @@ export class Optimizer {
 
     log(`compute() finished. Final optimized path length: ${this.pathCopy.length}. End: ${this.pathCopy[this.pathCopy.length - 1].exitPos}`)
     return this.pathCopy
+  }
+
+  /**
+   * The end of a merge cut short of a doorway: a move that opens or shuts a door, gate or trapdoor (an OpenHandler in
+   * its breaks) is not merged, nor the one after it (out of the doorway, where the door behind is shut): a straight run
+   * through them would not stop for the right click, nor go by the door as its state lets the bot.
+   */
+  private doorwayBound (start: number, end: number): number {
+    const doorway = (i: number): boolean => this.pathCopy[i]?.toBreak.some((b) => b instanceof OpenHandler) ?? false
+    if (doorway(start) || doorway(start - 1)) return start
+    for (let i = start + 1; i <= end; i++) {
+      if (doorway(i)) return i - 1
+      if (doorway(i - 1)) return i - 1
+    }
+    return end
   }
 
   makeResult (): Move[] {

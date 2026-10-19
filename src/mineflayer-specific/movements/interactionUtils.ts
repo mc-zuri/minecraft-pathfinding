@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, @typescript-eslint/strict-boolean-expressions */
 import { Bot, BotEvents } from 'mineflayer'
-import { blockReach, digInSight } from '../crosshairDig'
+import { blockReach, digInSight, useInSight } from '../crosshairDig'
 import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
 import { BlockInfo } from '../world/cacheWorld'
+import { clearToFace, PassagePart } from '../world/passages'
 import { BotcraftPhysics, EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
 import { World } from '../world/worldInterface'
 import { AABB, AABBUtils, BlockFace } from '@nxg-org/mineflayer-util-plugin'
@@ -690,6 +691,90 @@ export class BreakHandler extends InteractHandler {
       await this._breakTask.catch((err) => {
         logBreak('Caught error during _breakTask abort: %O', err)
       })
+    }
+  }
+}
+
+const logOpen = debug('minecraft-pathfinding:OpenHandler')
+
+/** ticks the server gets to answer a right click on a door, gate or trapdoor with its block update */
+const USE_ANSWER_TICKS = 20
+/** right clicks on a door that the server didn't answer before the move fails */
+const USE_TRIES = 3
+
+/**
+ * A door, fence gate or trapdoor in the move's way, opened (or shut) with a right click as a player does it: the bot
+ * stands, looks at a point of it in sight and uses it (useInSight: mineflayer-mouse's right click when loaded, else
+ * activateBlock with the crosshair's face and point), then waits for the server's block update with its state as the
+ * move needs it. A break for the executor's sake (the bot holds still while it is under way, MovementExecutor.digging),
+ * that leaves the block in its toggled state (`blockInfo`, what the search's later nodes see), not air.
+ */
+export class OpenHandler extends BreakHandler {
+  constructor (
+    x: number, y: number, z: number,
+    /** the block as the click leaves it */
+    target: BlockInfo,
+    /** the face of the cell the player's box goes to (passages.ts clearToFace), and which of its cells this is */
+    public readonly faceX: number,
+    public readonly faceZ: number,
+    public readonly part: PassagePart,
+    /** the move goes into the cell (`enter`) or out of it (`leave`), going (dirX, dirZ) */
+    public readonly how: 'enter' | 'leave',
+    public readonly dirX: number,
+    public readonly dirZ: number
+  ) {
+    super(x, y, z, 'solid')
+    ;(this as any).blockInfo = target
+  }
+
+  /** the block's state lets the player's box by (or the block is gone) */
+  isClear (bot: Bot): boolean {
+    const info = bot.pathfinder.world.getBlockInfo(this.vec)
+    if (info.isInvalid) return false
+    if (info.passage == null) return info.walkthrough || !info.physical
+    return clearToFace(info.shapes, this.faceX, this.faceZ, this.part)
+  }
+
+  needToPerform (bot: Bot): boolean {
+    return !this.isClear(bot)
+  }
+
+  /** the item in hand: a right click is made with whatever is held (a door's use takes no item) */
+  getItem (bot: Bot): Item | null {
+    return this.getCurrentItem(bot)
+  }
+
+  async performInfo (bot: Bot, ticks = 15): Promise<InteractionPerformInfo> {
+    const eye = bot.entity.position.offset(0, (bot.entity as any).eyeHeight ?? 1.62, 0)
+    const reachable = AABB.fromBlock(this.vec).distanceToVec(eye) < blockReach(bot)
+    return reachable
+      ? { ticks: 0, tickAllowance: 0, shiftTick: 0, raycasts: [] }
+      : { ticks: Infinity, tickAllowance: Infinity, shiftTick: Infinity, raycasts: [] }
+  }
+
+  /** whether the right click is still wanted: the state the move needs isn't there yet */
+  protected wanted (bot: Bot): boolean {
+    return this.needToPerform(bot)
+  }
+
+  async perform (bot: Bot, item: Item | null = null, opts: InteractOpts = {}): Promise<void> {
+    for (let attempt = 0; attempt < USE_TRIES && this.wanted(bot); attempt++) {
+      if (this.task?.canceled === true) return
+      const block = bot.blockAt(this.vec) as unknown as Block | null
+      if (block == null) throw new CancelError(`no block at ${this.vec.toString()}`)
+      logOpen(`using the ${block.name} at ${this.vec}`)
+      if (!(await useInSight(bot, block as any))) throw new CancelError(`the ${block.name} at ${this.vec.toString()} is not in sight`)
+      // the server's answer: the block update of its new state (both of a door's halves)
+      for (let tick = 0; tick < USE_ANSWER_TICKS && this.wanted(bot); tick++) await bot.waitForTicks(1)
+    }
+    if (this.wanted(bot)) throw new CancelError(`the block at ${this.vec.toString()} stayed as it was after ${USE_TRIES} right clicks`)
+    this.task?.finish()
+  }
+
+  async abort (bot: Bot): Promise<void> {
+    if ((this.task != null) && !this.task.done) {
+      this.task.finish()
+      this.task.canceled = true
     }
   }
 }

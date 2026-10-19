@@ -208,3 +208,33 @@ async function mouseDig (bot: Bot, block: Block, point: Vec3, reach: number, sig
     b.leftClickEnd()
   }
 }
+
+/** prismarine-world's BlockFace number as the face's direction (0 down, 1 up, 2 north, 3 south, 4 west, 5 east) */
+function faceVector (face: number): Vec3 {
+  return [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(0, 0, -1), new Vec3(0, 0, 1), new Vec3(-1, 0, 0), new Vec3(1, 0, 0)][face] ?? new Vec3(0, 1, 0)
+}
+
+export interface UseInSightOptions {
+  reach?: number
+  /** use with mineflayer-mouse's right click when it is loaded (default true) */
+  useMouse?: boolean
+}
+
+/**
+ * A right click on the block through the crosshair, as vanilla's use (Minecraft.startUseItem: useItemOn with the
+ * crosshair's block, face and point): the bot looks at a point of the block in sight, then mineflayer-mouse's right
+ * click when it is loaded (its packets, both hands as vanilla tries them), else mineflayer's activateBlock with that
+ * face and point. False when no point of the block is in sight from here: nothing is sent.
+ */
+export async function useInSight (bot: Bot, block: Block, options: UseInSightOptions = {}): Promise<boolean> {
+  const reach = options.reach ?? blockReach(bot)
+  const aim = await aimAt(bot, block, reach)
+  if (aim.point == null) return false
+  const b = bot as any
+  if (options.useMouse !== false && typeof b.rightClick === 'function' && b.mouse != null) {
+    b.rightClick()
+    return true
+  }
+  await b.activateBlock(block, faceVector(aim.face), aim.point.minus(block.position))
+  return true
+}

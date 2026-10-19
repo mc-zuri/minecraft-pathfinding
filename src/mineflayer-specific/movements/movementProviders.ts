@@ -37,6 +37,11 @@ export class IdleMovement extends MovementProvider {
 export class Forward extends MovementProvider {
   movementDirs = Movement.cardinalDirs
 
+  /** (the cell it leaves is checked with the rest, opened if need be: getMoveForward's safeOrOpen) */
+  override leavesStartCell (): boolean {
+    return true
+  }
+
   provideMovements (start: Move, storage: Move[], goal: goals.Goal, closed: Set<string>): void {
     for (const dir of this.movementDirs) {
       const off = start.cachedVec.plus(dir).floor()
@@ -78,8 +83,12 @@ export class Forward extends MovementProvider {
 
     // console.log('yay!')
     // console.log('hello?', cost, blockC.block, blockB.block, this.breakCost(blockC), this.breakCost(blockB))
-    if ((cost += this.safeOrBreak(blockB, toBreak)) > COST_INF) return
-    if ((cost += this.safeOrBreak(blockC, toBreak)) > COST_INF) return
+    // out of the cell it stands in, and into the next: a door, gate or trapdoor in either is gone through by its
+    // state's shapes, or opened when the click lets the bot by (safeOrOpen)
+    if ((cost += this.safeOrOpen(this.getBlockInfo(pos, 0, 0, 0), dir, 'feet', 'leave', toBreak)) > COST_INF) return
+    if ((cost += this.safeOrOpen(this.getBlockInfo(pos, 0, 1, 0), dir, 'head', 'leave', toBreak)) > COST_INF) return
+    if ((cost += this.safeOrOpen(blockB, dir, 'head', 'enter', toBreak)) > COST_INF) return
+    if ((cost += this.safeOrOpen(blockC, dir, 'feet', 'enter', toBreak)) > COST_INF) return
 
     // Exclusion zones: blockC is where the bot's feet end up. Fold the step cost
     // in now (before the move exists) so Move.cost stays read-only.

@@ -9,6 +9,7 @@ import type { ExecutorMap } from '.'
 import { Vec3 } from 'vec3'
 import { Vec3Properties } from '../../types'
 import { BlockInfo } from '../world/cacheWorld'
+import { clearToFace } from '../world/passages'
 
 /**
  * Movement provider.
@@ -36,6 +37,25 @@ export abstract class MovementProvider extends Movement {
       if (info.physical || info.liquid) return !BlockInfo.blocksToAvoid.has(info.type)
     }
     return false
+  }
+
+  /**
+   * Whether the move's player gets out of the cell it starts in: a door's, gate's or trapdoor's shapes there (an open
+   * door's panel along a side) let its box by on its way out, as its state is when the move starts (a door the path
+   * opened is open). Out of such a cell only a cardinal move goes, by a face the shapes leave clear; up and down are
+   * not out of it. A move that sees to this itself (Forward: safeOrOpen) says yes.
+   */
+  leavesStartCell (start: Move, move: Move): boolean {
+    const dx = Math.sign(Math.floor(move.exitPos.x) - start.x)
+    const dz = Math.sign(Math.floor(move.exitPos.z) - start.z)
+    if (dx === 0 && dz === 0) return true
+    for (const [dy, part] of [[0, 'feet'], [1, 'head']] as const) {
+      const cell = this.getBlockInfo(start, 0, dy, 0)
+      if (cell.passage == null || cell.shapes.length === 0) continue
+      if (dx !== 0 && dz !== 0) return false
+      if (!clearToFace(cell.shapes, dx, dz, part)) return false
+    }
+    return true
   }
 
   private boundaries!: [x: number, z: number, y: number]
@@ -352,7 +372,12 @@ export class MovementHandler implements AMovementProvider<Move> {
     for (const newMove of this.recognizedMovements) {
       newMove.loadMove(currentMove)
       newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear)
+      const from = moves.length
       newMove.provideMovements(currentMove, moves, this.goal, closed)
+      // (out of a doorway only by the way its door lets the bot by)
+      for (let i = moves.length - 1; i >= from; i--) {
+        if (!newMove.leavesStartCell(currentMove, moves[i])) moves.splice(i, 1)
+      }
     }
 
     if (this.avoid != null && this.avoid.size > 0) {

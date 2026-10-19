@@ -9,6 +9,7 @@ import type { Block, BlockType, MCData, RayType } from '../../types'
 import { AABB } from '@nxg-org/mineflayer-util-plugin'
 import { Movement } from '../movements'
 import { fasterGetBlock } from './utils'
+import { PassageKind, Shape, openableByHand, passageKind } from './passages'
 
 import pBlock from 'prismarine-block'
 // uncomment below for no interop
@@ -26,7 +27,10 @@ export class BlockInfo {
   static readonly liquids = new Set()
   static readonly waters = new Set()
   static readonly gravityBlocks = new Set()
-  static readonly openable = new Set()
+  /** doors, fence gates and trapdoors a player opens by hand (all but the iron ones: BlockSetType.canOpenByHand) */
+  static readonly openable = new Set<number>()
+  /** doors, fence gates and trapdoors, the iron ones too: gone through by their state's shapes, never dug (passages.ts) */
+  static readonly passages = new Map<number, PassageKind>()
   static readonly emptyBlocks = new Set()
   static readonly scaffoldingBlockItems = new Set<number>()
   static readonly mlgItems = new Set<number>()
@@ -213,15 +217,40 @@ export class BlockInfo {
       })
 
     registry.blocksArray.forEach((block) => {
-      if (
-        BlockInfo.interactableBlocks.has(block.name) &&
-        block.name != null &&
-        block.name.toLowerCase().includes('gate') &&
-        !block.name.toLowerCase().includes('iron')
-      ) {
-        BlockInfo.openable.add(block.id)
-      }
+      if (block.name == null) return
+      const kind = passageKind(block.name)
+      if (kind == null) return
+      BlockInfo.passages.set(block.id, kind)
+      if (openableByHand(block.name)) BlockInfo.openable.add(block.id)
     })
+  }
+
+  /** a door, fence gate or trapdoor (passages.ts): what kind, else null */
+  public get passage (): PassageKind | null {
+    return BlockInfo.passages.get(this.type) ?? null
+  }
+
+  /** the collision shapes of the block's state (none for a block not known) */
+  public get shapes (): Shape[] {
+    return (this.block?.shapes as Shape[] | undefined) ?? []
+  }
+
+  private _toggled?: BlockInfo | null
+
+  /**
+   * The block as a right click leaves it: `open` flipped (DoorBlock, FenceGateBlock and TrapDoorBlock.useWithoutItem;
+   * a door's click flips both halves, each this way). Null for a block with no `open` state.
+   */
+  public toggled (): BlockInfo | null {
+    if (this._toggled !== undefined) return this._toggled
+    this._toggled = null
+    const props = this.block?.getProperties?.() as Record<string, unknown> | undefined
+    if (this.block != null && props != null && typeof props.open === 'boolean') {
+      const flipped = (BlockInfo.PBlock as any).fromProperties(this.block.type, { ...props, open: !(props.open as boolean) }, 0) as Block
+      flipped.position = this.position
+      this._toggled = BlockInfo.fromBlock(flipped)
+    }
+    return this._toggled
   }
 
   static fromBlock (b: Block | null): BlockInfo {
