@@ -16,7 +16,7 @@ import { createCacheWorld } from './setup'
 function rigWith (cobblestone: number, moveSettings: Record<string, unknown> = {}) {
   const rig = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 0.5)).rig
   rig.bot.inventory.items = () => cobblestone > 0 ? [{ type: rig.mcData.itemsByName.cobblestone.id, count: cobblestone, name: 'cobblestone' }] as any : []
-  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 1500 }, moveSettings: moveSettings as any }))
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 1500 } as any, moveSettings: moveSettings as any }))
   return rig
 }
 
@@ -107,7 +107,7 @@ test('goto searches again when the blocks it holds no longer cover the rest of i
   const stack = new Item(rig.mcData.itemsByName.cobblestone.id, 8)
   stack.slot = 36
   ;(rig.bot.inventory as any).slots[36] = stack
-  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 500 } }))
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 500 } as any }))
   try {
     lavaStrip(rig as any, 3, 200)
     // three to place of a budget of four; once the first is down, the bot has one left (the rest gone elsewhere)
@@ -133,7 +133,7 @@ test('goto goes on over its bridge when the bot picks blocks up on the way (the 
   const stack = new Item(rig.mcData.itemsByName.cobblestone.id, 8)
   stack.slot = 36
   ;(rig.bot.inventory as any).slots[36] = stack
-  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 500 } }))
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 500 } as any }))
   try {
     lavaStrip(rig as any, 3, 200)
     let places = 0
