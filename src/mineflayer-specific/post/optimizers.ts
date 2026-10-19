@@ -291,9 +291,47 @@ export class DropDownOpt extends MovementOptimizer {
   }
 }
 
+/**
+ * Whether the player's box (and a margin), carried along the straight line from a jump's start `from` to `to` (as the
+ * executor of a merged move steers it, at the line's far end), is over ground at the step's level with room above it
+ * everywhere past the start's own block: each cell its footprint meets has a solid floor that isn't one to keep off
+ * (magma; blocksToAvoid) under `to`'s level and nothing at feet or head height. A cell at the start's level beside the
+ * line (the low ground, a pit) rules the line out: the bot cuts across it, jumping while it turns.
+ */
+export function jumpLineOverGround (world: World, from: Vec3, to: Vec3): boolean {
+  const startX = Math.floor(from.x)
+  const startZ = Math.floor(from.z)
+  const y = Math.floor(to.y + 1e-6)
+  const dx = to.x - from.x
+  const dz = to.z - from.z
+  const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.1))
+  const hW = 0.3 + 0.1
+  const seen = new Set<string>()
+  for (let s = 0; s <= steps; s++) {
+    const cx = from.x + (dx * s) / steps
+    const cz = from.z + (dz * s) / steps
+    for (let x = Math.floor(cx - hW); x <= Math.floor(cx + hW); x++) {
+      for (let z = Math.floor(cz - hW); z <= Math.floor(cz + hW); z++) {
+        if (x === startX && z === startZ) continue
+        const key = `${x},${z}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const floor = world.getBlockInfo(new Vec3(x, y - 1, z))
+        if (!floor.physical || !floor.safe) return false
+        for (const dy of [0, 1]) {
+          const cell = world.getBlockInfo(new Vec3(x, y + dy, z))
+          if (!cell.walkthrough || cell.liquid) return false
+        }
+      }
+    }
+  }
+  return true
+}
+
 export class ForwardJumpUpOpt extends MovementOptimizer {
   identEndOpt (currentIndex: number, path: Move[]): number | Promise<number> {
     const startIndex = currentIndex
+    const jump = path[currentIndex]
     let lastMove = path[currentIndex]
     let nextMove = path[++currentIndex]
 
@@ -322,6 +360,11 @@ export class ForwardJumpUpOpt extends MovementOptimizer {
         return --currentIndex
       }
 
+      if (!jumpLineOverGround(this.world, jump.entryPos, nextMove.exitPos)) {
+        log(`[ForwardJumpUpOpt] Index ${currentIndex}: the straight line leaves the step's ground.`)
+        return --currentIndex
+      }
+
       if (++currentIndex >= path.length) return --currentIndex
       lastMove = nextMove
       nextMove = path[currentIndex]
@@ -337,6 +380,10 @@ export class ForwardJumpUpOpt extends MovementOptimizer {
     ) {
       if (nextMove.exitPos.y > firstPos.y) {
         log(`[ForwardJumpUpOpt] Index ${currentIndex}: nextMove Y is higher than firstPos Y. Aborting.`)
+        return --currentIndex
+      }
+      if (!jumpLineOverGround(this.world, jump.entryPos, nextMove.exitPos)) {
+        log(`[ForwardJumpUpOpt] Index ${currentIndex}: the straight line leaves the step's ground.`)
         return --currentIndex
       }
       if (++currentIndex >= path.length) return --currentIndex
