@@ -321,6 +321,19 @@ export class JumpCalculator {
   }
 }
 
+/** the player's half width (0.6 wide): how far in from its block's edges a fall off a ledge is aimed */
+export const FALL_AIM_INSET = 0.3
+
+/**
+ * The point `inset` in from the edges of the block's top face nearest to `vert` (a point of the face): the aim of a
+ * walk off a ledge onto the block. Aimed at the face's nearest corner (findGoalVertex), the box's middle went over the
+ * corner, half the box beside the block, and caught on a block next to the corner (a cell one deep beside the
+ * landing: the bot stood in it pressing into that block, and the fall's simulation never landed).
+ */
+export function insetVertex (vert: Vec3, goal: AABB, inset: number = FALL_AIM_INSET): Vec3 {
+  return v(Math.min(Math.max(vert.x, goal.minX + inset), goal.maxX - inset), vert.y, Math.min(Math.max(vert.z, goal.minZ + inset), goal.maxZ - inset))
+}
+
 export class ParkourJumpHelper {
   public readonly sim: JumpSim
   private readonly bot: Bot
@@ -405,6 +418,12 @@ export class ParkourJumpHelper {
     return minVert
   }
 
+  /** where a walk off a ledge onto the block aims (insetVertex of its nearest point) */
+  public findFallVertex (goal: Vec3): Vec3 {
+    const box = AABB.fromBlockPos(goal)
+    return insetVertex(this.findGoalVertex(box), box)
+  }
+
   public findBackupVertex (bbs: AABB[], goalVert: Vec3, orgPos: Vec3 = this.bot.entity.position): Vec3 {
     const candidates = this._buildBackupCandidates(bbs, goalVert, orgPos)
     return candidates[0] ?? orgPos.clone()
@@ -455,7 +474,7 @@ export class ParkourJumpHelper {
   }
 
   public simFallOffEdge (goal: Vec3, target?: Vec3): boolean {
-    const goalVert = this.findGoalVertex(AABB.fromBlockPos(goal))
+    const goalVert = this.findFallVertex(goal)
 
     // console.log('sim jump goals', goal, goalVert)
     const ctx = EPhysicsCtx.FROM_BOT(this.sim.ctx, this.bot)

@@ -752,7 +752,11 @@ export class ParkourForwardExecutor extends MovementExecutor {
     return ret
   }
 
+  /** the walk off the ledge under way aims here (ParkourJumpHelper.findFallVertex), not at the jump's target */
+  private fallAim: Vec3 | null = null
+
   private _startExecuting (): void {
+    this.fallAim = null
     this.executing = true
     this.airborneSeen = false
     this.landedTicks = 0
@@ -1088,8 +1092,10 @@ export class ParkourForwardExecutor extends MovementExecutor {
 
       if (fallOffEdge) {
         this._startExecuting()
-        this._lockCurrentYaw(this._desiredYawTo(targetEyeVec))
-        this._applySmartControls(targetEyeVec, false)
+        // the aim its simulation landed with (simFallOffEdge)
+        const aim = this.fallAim = this.shitterTwo.findFallVertex(jumpState.target)
+        this._lockCurrentYaw(this._desiredYawTo(aim))
+        this._applySmartControls(aim, false)
         return true
       }
 
@@ -1154,8 +1160,9 @@ export class ParkourForwardExecutor extends MovementExecutor {
       // printBotControls(this.bot, logParkour)
       if (this.isComplete(thisMove)) return true
       this._checkLanding(thisMove)
-      this._lockCurrentYaw(this._desiredYawTo(targetEyeVec))
-      this._applySmartControls(targetEyeVec, false)
+      const aim = this.fallAim ?? targetEyeVec
+      this._lockCurrentYaw(this._desiredYawTo(aim))
+      this._applySmartControls(aim, false)
       return false
     }
 
@@ -1173,7 +1180,7 @@ export class ParkourForwardExecutor extends MovementExecutor {
       }
       this._clearBackupState()
       if (canDirectJump) this._startJumpExecution(targetEyeVec)
-      else this._applySmartControls(targetEyeVec, false)
+      else this._applySmartControls(this.shitterTwo.findFallVertex(target), false)
 
       return false
     }

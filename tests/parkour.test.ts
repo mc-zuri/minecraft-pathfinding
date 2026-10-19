@@ -85,3 +85,35 @@ test('a ParkourDiagonal down over a one-deep hole, the bot facing the step behin
     rig.stopPassivePhysics()
   }
 })
+
+test('a ParkourDiagonal down into a pit beside the landing walks off the ledge aimed in from the landing\'s corner, not at it: a block next to the corner held the box', async () => {
+  const rig = createCacheWorld('1.20.4', 65, new Vec3(0.5, 66, 0.5)).rig
+  rig.bot.loadPlugin(createPlugin())
+  const world = (rig.bot as any).world
+  try {
+    // a ledge one high (stone at y 65) with the bot on it at (0, 66, 0); below it a cell one deep at (1, 65, 1) and the
+    // landing's level (1 to 3, 65, 2 to 3), stone at (2, 65, 1) beside the landing's corner (a dragon run's on 26.3)
+    for (let x = -2; x <= 5; x++) {
+      for (let z = -2; z <= 5; z++) world.setBlock(new Vec3(x, 65, z), 'stone')
+    }
+    world.setBlock(new Vec3(1, 65, 1), 'air')
+    for (let x = 1; x <= 3; x++) for (let z = 2; z <= 3; z++) world.setBlock(new Vec3(x, 65, z), 'air')
+    world.setBlock(new Vec3(-1, 66, 0), 'stone')
+    // against the ledge's west wall: walked off it toward the landing's corner (2, 2) the bot came down in the open
+    // cells at (1, 2) and pressed into the stone at (2, 65, 1), its box half beside the landing; the fall's simulation
+    // did the same and never landed, and with no jump either the move failed ('will not make this jump')
+    rig.bot.entity.position = new Vec3(0.3, 66, 0.698)
+    rig.bot.entity.velocity = new Vec3(0, -0.0784, 0)
+    rig.bot.entity.onGround = true
+    void rig.bot.look(1.573, 0, true)
+    rig.bot.clearControlStates()
+    const { ticks, failed } = await runMove(rig, ParkourDiagonal, new Vec3(0.5, 66, 0.5), new Vec3(2.5, 65, 2.5), 13.244)
+    const at = rig.bot.entity.position
+    assert.deepEqual(failed, [])
+    assert.equal(Math.floor(at.x), 2, `at ${at}`)
+    assert.equal(Math.floor(at.z), 2, `at ${at}`)
+    assert.ok(ticks < 40, `${ticks} ticks`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
