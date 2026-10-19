@@ -113,7 +113,7 @@ test('goto walks through a closed fence gate in a fence (the gate is 1.5 high, a
   }, 'oak_fence')
   const world = (rig.bot as any).world
   for (let z = -20; z <= 20; z++) for (let y = 65; y < 67; y++) world.setBlock(new Vec3(3, y, z), 'air')
-  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false } as any }))
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, closeGatesBehind: false } as any }))
   try {
     const goal = new goals.GoalBlock(6, 64, 0)
     await withTimeout(rig.bot.pathfinder.goto(goal), 30000, 'goto timed out')
@@ -216,5 +216,68 @@ test('the block cache follows a door\'s and a gate\'s toggles (the server\'s blo
     assert.equal(cache.getBlockInfo(gate).walkthrough, true)
   } finally {
     rig.stopPassivePhysics()
+  }
+})
+
+/** a fence along x = 3 with a closed gate in it at (3, 64, 0) */
+function fenced (gate = 'oak_fence_gate'): ReturnType<typeof createCacheWorld>['rig'] {
+  const rig = walled((world) => {
+    world.setBlock(new Vec3(3, 64, 0), stateOf(gate, { facing: 'east', open: false }))
+    world.setBlock(new Vec3(3, 65, 0), 'air')
+  }, 'oak_fence')
+  const world = (rig.bot as any).world
+  for (let z = -20; z <= 20; z++) for (let y = 65; y < 67; y++) world.setBlock(new Vec3(3, y, z), 'air')
+  return rig
+}
+
+test('a gate the bot opened is shut behind it once it is through (closeGatesBehind, on by default: a pen\'s animals stay in)', async () => {
+  const rig = fenced()
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false } as any }))
+  const world = (rig.bot as any).world
+  try {
+    const plan = await finalPath(rig.bot, new goals.GoalBlock(6, 64, 0))
+    assert.ok(plan.path.some((m: any) => m.toBreak.some((b: any) => b.constructor.name === 'CloseHandler')), 'the path shuts the gate')
+    const goal = new goals.GoalBlock(6, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, 'goto timed out')
+    assert.ok(goal.isEnd(rig.bot.entity.position.floored() as any), `ended at ${rig.bot.entity.position}`)
+    assert.equal((rig.bot as any).activatedBlocks.length, 2, 'opened, then shut')
+    assert.equal(world.getBlock(new Vec3(3, 64, 0)).getProperties().open, false, 'the gate is shut')
+    assert.ok(rig.bot.entity.position.x > 3.9, `the bot is through: ${rig.bot.entity.position}`)
+
+    // and back in the other way, shut behind it again
+    const back = new goals.GoalBlock(0, 64, 0)
+    await withTimeout(rig.bot.pathfinder.goto(back), 30000, 'goto back timed out')
+    assert.ok(back.isEnd(rig.bot.entity.position.floored() as any), `ended at ${rig.bot.entity.position}`)
+    assert.equal((rig.bot as any).activatedBlocks.length, 4)
+    assert.equal(world.getBlock(new Vec3(3, 64, 0)).getProperties().open, false, 'the gate is shut')
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
+test('a gate is left open with closeGatesBehind off; a door by day is left open, by night shut (closeDoorsBehind: night)', async () => {
+  const rig = fenced()
+  rig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false, closeGatesBehind: false } as any }))
+  try {
+    const plan = await finalPath(rig.bot, new goals.GoalBlock(6, 64, 0))
+    assert.ok(!plan.path.some((m: any) => m.toBreak.some((b: any) => b.constructor.name === 'CloseHandler')))
+  } finally {
+    rig.stopPassivePhysics()
+  }
+
+  for (const isDay of [true, false]) {
+    const doorRig = walled((world) => door(world, 'oak_door', CLOSED_EAST))
+    ;(doorRig.bot as any).time = { isDay, timeOfDay: isDay ? 1000 : 18000 }
+    doorRig.bot.loadPlugin(createPlugin({ moveSettings: { canDig: false } as any }))
+    const world = (doorRig.bot as any).world
+    try {
+      const goal = new goals.GoalBlock(6, 64, 0)
+      await withTimeout(doorRig.bot.pathfinder.goto(goal), 30000, 'goto timed out')
+      assert.ok(goal.isEnd(doorRig.bot.entity.position.floored() as any), `ended at ${doorRig.bot.entity.position}`)
+      assert.equal(world.getBlock(new Vec3(3, 64, 0)).getProperties().open, isDay, isDay ? 'left open by day' : 'shut by night')
+      assert.equal(world.getBlock(new Vec3(3, 65, 0)).getProperties().open, isDay)
+    } finally {
+      doorRig.stopPassivePhysics()
+    }
   }
 })

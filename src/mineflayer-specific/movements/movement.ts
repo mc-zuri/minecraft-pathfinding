@@ -4,8 +4,8 @@ import { Vec3 } from 'vec3'
 import { Move } from '../move'
 import { World } from '../world/worldInterface'
 import { BlockInfo } from '../world/cacheWorld'
-import { BreakHandler, InteractHandler, OpenHandler, PlaceHandler } from './interactionUtils'
-import { clearToFace, PassagePart } from '../world/passages'
+import { BreakHandler, CloseHandler, InteractHandler, OpenHandler, PlaceHandler } from './interactionUtils'
+import { clearToFace, PassageKind, PassagePart } from '../world/passages'
 import type { InteractType } from './interactionUtils'
 import type { Block } from '../../types'
 import { Vec3Properties } from '../../types'
@@ -34,6 +34,10 @@ export interface MovementOptions {
   canOpenDoors: boolean
   /** ticks charged for opening a door, gate or trapdoor (a stop, a look and a right click the server answers) */
   openCost: number
+  /** shut a fence gate the bot opened once it is through (so that a pen's animals stay in) */
+  closeGatesBehind: boolean
+  /** shut a door or trapdoor the bot opened once it is through: always, never, or by night (so that mobs stay out) */
+  closeDoorsBehind: boolean | 'night'
   canDig: boolean
   canPlace: boolean
   dontCreateFlow: boolean
@@ -70,6 +74,8 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   allowJumpSprint: true,
   canOpenDoors: true,
   openCost: 5,
+  closeGatesBehind: true,
+  closeDoorsBehind: 'night',
   canDig: true,
   canPlace: true,
   dontCreateFlow: true,
@@ -396,6 +402,39 @@ export abstract class Movement {
       h.z === block.position.z && Math.abs(h.y - block.position.y) === 1)
     toBreak.push(new OpenHandler(block.position.x, block.position.y, block.position.z, target, faceX, faceZ, part, how, dir.x, dir.z))
     return sameDoor ? 0 : this.settings.openCost
+  }
+
+  /** whether a door, gate or trapdoor of this kind the bot opened is shut behind it (closeGatesBehind, closeDoorsBehind) */
+  shutsBehind (kind: PassageKind): boolean {
+    if (kind === 'gate') return this.settings.closeGatesBehind
+    const doors = this.settings.closeDoorsBehind
+    // night as the game's clock has it (mineflayer's time.isDay: day from 23000 to 13000)
+    return doors === 'night' ? (this.bot.time as any)?.isDay === false : doors
+  }
+
+  /**
+   * The doors, gates and trapdoors to shut once the bot is through, as the move going `dir` from `start` leaves them:
+   * the one it opens in the cell it leaves, and the one the move before opened going into that cell. A CloseHandler is
+   * pushed to toBreak for each (both of a door's halves, the second's click free), with the cost of the click.
+   */
+  closeBehind (start: Move, dir: Vec3Properties, toBreak: BreakHandler[]): number {
+    const opened: OpenHandler[] = []
+    for (const h of toBreak) if (h instanceof OpenHandler && !(h instanceof CloseHandler) && h.how === 'leave') opened.push(h)
+    for (const h of start.toBreak) {
+      if (h instanceof OpenHandler && !(h instanceof CloseHandler) && h.how === 'enter' && h.x === start.x && h.z === start.z) opened.push(h)
+    }
+    let cost = 0
+    for (const h of opened) {
+      const kind = BlockInfo.passages.get(h.blockInfo.type)
+      if (kind == null || !this.shutsBehind(kind)) continue
+      const closed = h.blockInfo.toggled()
+      if (closed == null) continue
+      if (toBreak.some((c) => c instanceof CloseHandler && c.x === h.x && c.y === h.y && c.z === h.z)) continue
+      const sameDoor = toBreak.some((c) => c instanceof CloseHandler && c.x === h.x && c.z === h.z && Math.abs(c.y - h.y) === 1)
+      toBreak.push(new CloseHandler(h.x, h.y, h.z, closed, dir.x, dir.z))
+      if (!sameDoor) cost += this.settings.openCost
+    }
+    return cost
   }
 
   /**

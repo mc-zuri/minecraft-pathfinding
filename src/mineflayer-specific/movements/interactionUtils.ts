@@ -5,7 +5,7 @@ import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
 import { BlockInfo } from '../world/cacheWorld'
-import { clearToFace, PassagePart } from '../world/passages'
+import { clearToFace, pastShapes, PassagePart } from '../world/passages'
 import { BotcraftPhysics, EPhysicsCtx } from '@nxg-org/mineflayer-physics-util'
 import { World } from '../world/worldInterface'
 import { AABB, AABBUtils, BlockFace } from '@nxg-org/mineflayer-util-plugin'
@@ -775,6 +775,56 @@ export class OpenHandler extends BreakHandler {
     if ((this.task != null) && !this.task.done) {
       this.task.finish()
       this.task.canceled = true
+    }
+  }
+}
+
+/**
+ * A door, gate or trapdoor the bot opened, shut behind it once it is through (closeGatesBehind, closeDoorsBehind): a
+ * right click as the bot's box is past the block's closed shapes going (dirX, dirZ), from where it stands then. It
+ * waits for the bot to get past; a door out of reach by then, or not in sight, is left open (the walk goes on).
+ */
+export class CloseHandler extends OpenHandler {
+  private givenUp = false
+
+  constructor (x: number, y: number, z: number, closed: BlockInfo, dirX: number, dirZ: number) {
+    super(x, y, z, closed, 0, 0, 'feet', 'leave', dirX, dirZ)
+  }
+
+  /** the block is open still (as the bot left it), and not given up on */
+  needToPerform (bot: Bot): boolean {
+    if (this.givenUp) return false
+    const info = bot.pathfinder.world.getBlockInfo(this.vec)
+    if (info.passage == null) return false
+    return info.block?.getProperties?.().open === true
+  }
+
+  /** whether the bot's box is past the block's shapes as the click shuts it */
+  past (bot: Bot): boolean {
+    const closed = bot.pathfinder.world.getBlockInfo(this.vec).toggled()
+    if (closed == null) return true
+    const pos = bot.entity.position
+    return pastShapes(closed.shapes, this.dirX, this.dirZ, pos.x - this.x, pos.z - this.z)
+  }
+
+  async performInfo (bot: Bot, ticks = 15): Promise<InteractionPerformInfo> {
+    const info = await super.performInfo(bot, ticks)
+    if (info.ticks === Infinity) {
+      // gone on out of reach of it: left open
+      if (this.past(bot)) this.givenUp = true
+      return info
+    }
+    return this.past(bot) ? info : { ticks: Infinity, tickAllowance: Infinity, shiftTick: Infinity, raycasts: [] }
+  }
+
+  async perform (bot: Bot, item: Item | null = null, opts: InteractOpts = {}): Promise<void> {
+    try {
+      await super.perform(bot, item, opts)
+    } catch (err) {
+      // not shut (not in sight from here, the server didn't answer): the walk goes on with it open
+      logOpen(`left the block at ${this.vec} open: ${(err as Error)?.message ?? String(err)}`)
+      this.givenUp = true
+      this.task?.finish()
     }
   }
 }

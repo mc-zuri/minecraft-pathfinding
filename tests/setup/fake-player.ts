@@ -243,7 +243,28 @@ export function createFakePlayer(
     const eyePosition = fakePlayer.entity.position.offset(0, eyeHeight, 0)
     const viewDirection = getViewDirection(fakePlayer.entity.pitch, fakePlayer.entity.yaw)
 
-    return world.raycast(eyePosition, viewDirection.normalize(), maxDistance, matcher ?? undefined)
+    const hit = world.raycast(eyePosition, viewDirection.normalize(), maxDistance, matcher ?? undefined)
+    // an open fence gate has no collision shape but its outline (FenceGateBlock.getShape), which the crosshair meets
+    // (mineflayer's ray_trace outlineShapes): looked for along the ray, nearer than the hit
+    const dir = viewDirection.normalize()
+    const limit = hit != null ? hit.intersect.distanceTo(eyePosition) : maxDistance
+    let prev = eyePosition
+    for (let t = 0.02; t < Math.min(limit, 8); t += 0.02) {
+      const p = eyePosition.plus(dir.scaled(t))
+      const block = world.getBlock(p.floored()) as any
+      if (block != null && /fence_gate$/.test(block.name) && block.shapes.length === 0) {
+        const zAxis = block.getProperties().facing === 'north' || block.getProperties().facing === 'south'
+        const box = zAxis ? [0, 0, 0.375, 1, 1, 0.625] : [0.375, 0, 0, 0.625, 1, 1]
+        const r = p.minus(block.position)
+        if (r.x >= box[0] && r.x <= box[3] && r.y >= box[1] && r.y <= box[4] && r.z >= box[2] && r.z <= box[5]) {
+          const q = prev.minus(block.position)
+          const face = q.y > box[4] ? 1 : q.y < box[1] ? 0 : q.z < box[2] ? 2 : q.z > box[5] ? 3 : q.x < box[0] ? 4 : 5
+          return Object.assign(block, { face, intersect: p }) as RayType
+        }
+      }
+      prev = p
+    }
+    return hit
   }
 
   function digTime(block: Block): number {

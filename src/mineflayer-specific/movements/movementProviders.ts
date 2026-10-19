@@ -89,6 +89,8 @@ export class Forward extends MovementProvider {
     if ((cost += this.safeOrOpen(this.getBlockInfo(pos, 0, 1, 0), dir, 'head', 'leave', toBreak)) > COST_INF) return
     if ((cost += this.safeOrOpen(blockB, dir, 'head', 'enter', toBreak)) > COST_INF) return
     if ((cost += this.safeOrOpen(blockC, dir, 'feet', 'enter', toBreak)) > COST_INF) return
+    // the door or gate opened to go through the cell it leaves is shut behind it
+    cost += this.closeBehind(start, dir, toBreak)
 
     // Exclusion zones: blockC is where the bot's feet end up. Fold the step cost
     // in now (before the move exists) so Move.cost stays read-only.
