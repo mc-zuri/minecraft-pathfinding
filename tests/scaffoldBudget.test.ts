@@ -20,10 +20,10 @@ function rigWith (cobblestone: number, moveSettings: Record<string, unknown> = {
   return rig
 }
 
-/** a strip of lava `width` blocks wide east of the bot, for 60 blocks either way, nothing under it */
-function lavaStrip (rig: ReturnType<typeof rigWith>, width: number): void {
+/** a strip of lava `width` blocks wide east of the bot, `span` blocks either way, nothing under it */
+function lavaStrip (rig: ReturnType<typeof rigWith>, width: number, span = 60): void {
   const world = (rig.bot as any).world
-  for (let x = 2; x < 2 + width; x++) for (let z = -60; z <= 60; z++) world.setBlock(new Vec3(x, 63, z), 'lava')
+  for (let x = 2; x < 2 + width; x++) for (let z = -span; z <= span; z++) world.setBlock(new Vec3(x, 63, z), 'lava')
 }
 
 async function search (rig: ReturnType<typeof rigWith>, goal: goals.Goal): Promise<{ status: string, path: Move[] }> {
@@ -96,6 +96,56 @@ test('the scaffolding the reserve leaves is not planned: a tower needs its block
     let last: any
     for await (const res of rig.bot.pathfinder.getPathTo(new goals.GoalBlock(0, 65, 0))) last = res.result
     assert.notEqual(last.status, 'success')
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
+test('goto searches again when the blocks it holds no longer cover the rest of its bridge (used or dropped on the way)', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 0.5)).rig
+  const Item = require('prismarine-item')('1.20.4')
+  const stack = new Item(rig.mcData.itemsByName.cobblestone.id, 8)
+  stack.slot = 36
+  ;(rig.bot.inventory as any).slots[36] = stack
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 500 } }))
+  try {
+    lavaStrip(rig as any, 3, 200)
+    // three to place of a budget of four; once the first is down, the bot has one left (the rest gone elsewhere)
+    let places = 0
+    ;(rig.bot as any).on('blockPlaced', () => { if (++places === 1) stack.count = 1 })
+    const failed: string[] = []
+    rig.bot.on('pathfinderMoveFailed' as any, (info: any) => failed.push(String(info?.error)))
+    let lowest = rig.bot.entity.position.y
+    rig.bot.on('physicsTick', () => { lowest = Math.min(lowest, rig.bot.entity.position.y) })
+    await rig.bot.pathfinder.goto(new goals.GoalBlock(6, 64, 0)).catch(() => {})
+    assert.equal(places, 1, 'it went on bridging with the blocks it no longer had')
+    assert.deepEqual(failed.filter(e => /no item to place/.test(e)), [])
+    assert.ok(lowest >= 64 - 1e-6, `the bot fell (to y ${lowest})`)
+    assert.equal(stack.count, 1)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
+test('goto goes on over its bridge when the bot picks blocks up on the way (the plan still fits)', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0.5, 64, 0.5)).rig
+  const Item = require('prismarine-item')('1.20.4')
+  const stack = new Item(rig.mcData.itemsByName.cobblestone.id, 8)
+  stack.slot = 36
+  ;(rig.bot.inventory as any).slots[36] = stack
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { searchTimeoutMs: 500 } }))
+  try {
+    lavaStrip(rig as any, 3, 200)
+    let places = 0
+    ;(rig.bot as any).on('blockPlaced', () => { if (++places === 1) stack.count += 16 })
+    const resets: string[] = []
+    rig.bot.on('pathfinderMoveFailed' as any, (info: any) => resets.push(String(info?.error)))
+    const goal = new goals.GoalBlock(6, 64, 0)
+    await rig.bot.pathfinder.goto(goal)
+    const at = rig.bot.entity.position
+    assert.ok(goal.isEnd({ x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) } as any), `goto ended at ${at}`)
+    assert.equal(places, 3)
+    assert.deepEqual(resets, [])
   } finally {
     rig.stopPassivePhysics()
   }

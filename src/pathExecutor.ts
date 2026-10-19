@@ -15,7 +15,7 @@ import { Optimizer } from './mineflayer-specific/post'
 import { World } from './mineflayer-specific/world/worldInterface'
 import type { ResetReason } from './types'
 import { ThePathfinder } from './ThePathfinder'
-import { printBotControls } from './utils'
+import { getScaffoldBudget, getScaffoldCount, printBotControls } from './utils'
 import { moveKey } from './mineflayer-specific/movements/movementProvider'
 import { describeMove } from './diagnostics/pathState'
 
@@ -188,6 +188,15 @@ export class PathExecutor {
       tickCallback?.call(process)
     }
     return state.done
+  }
+
+  /** the blocks the path places from its move at `index` on that the world doesn't have yet */
+  private placesLeft (localPath: Move[], index: number): number {
+    let n = 0
+    for (let i = index; i < localPath.length; i++) {
+      for (const place of localPath[i].toPlace) if (place.needToPerform(this.bot)) n++
+    }
+    return n
   }
 
   private findNextCurrentIdx (move: Move, localPath: Move[], currentIndex: number, adding?: boolean | number): number {
@@ -439,6 +448,16 @@ export class PathExecutor {
           currentIndex = this.findNextCurrentIdx(move, localPath, currentIndex)
           this.setCurrentIndex(currentIndex)
           continue
+        }
+
+        // the blocks the rest of the path places, against the budget the inventory gives now (a search's): fewer
+        // than it was planned with (a place tried again, blocks used or dropped on the way), and goto searches again
+        // from here, before a bridge's move starts that the bot can't finish
+        const placesLeft = this.placesLeft(localPath, currentIndex)
+        if (placesLeft > 0 && placesLeft > getScaffoldBudget(bot, executor.settings)) {
+          log('%d blocks left to place on the path, a budget of %d: searching again', placesLeft, getScaffoldBudget(bot, executor.settings))
+          this.setResetReason('inventoryChanged')
+          throw new ResetError('inventoryChanged', `${placesLeft} blocks to place, ${getScaffoldCount(bot)} held`)
         }
 
         runnerStage = 'align'
