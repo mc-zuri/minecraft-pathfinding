@@ -184,6 +184,30 @@ export class JumpCalculator {
     return state.onGround && state.pos.y === goal.y
   }
 
+  /**
+   * jumpLandsNow with a margin, for a jump with a deadly fall beside it: the sprint jump from where the bot is now, as
+   * it moves, lands at the goal's height with the player's middle over `onto` (the step's block: half the box or more
+   * on it, not an edge caught) and, the keys let go, is still standing there `settleTicks` later (no slide off it on
+   * the momentum the jump carried)
+   */
+  public jumpLandsOn (goal: Vec3, onto: AABB, maxTicks = 20, settleTicks = 3): boolean {
+    const state = this.resetState()
+    stateLookAt(state, goal)
+    state.control.set('forward', true)
+    state.control.set('jump', true)
+    state.control.set('sprint', true)
+    this.engine.simulateUntil((state, ticks) => ticks > 0 && state.onGround, () => { }, () => { }, this.ctx, this.world, maxTicks)
+    const over = (): boolean => state.onGround && state.pos.y === goal.y &&
+      state.pos.x >= onto.minX && state.pos.x <= onto.maxX && state.pos.z >= onto.minZ && state.pos.z <= onto.maxZ
+    if (!over()) return false
+    state.control = ControlStateHandler.DEFAULT()
+    for (let i = 0; i < settleTicks; i++) {
+      this.engine.ctx.simulate(this.ctx, this.world)
+      if (!state.onGround || state.pos.y !== goal.y) return false
+    }
+    return true
+  }
+
   protected resetState (): PlayerState {
     this.ctx = EPhysicsCtx.FROM_BOT(this.engine.ctx, this.bot)
     this.ctx.state.age = 0

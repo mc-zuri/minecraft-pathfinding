@@ -28,6 +28,11 @@ export interface MovementOptions {
   placeCost: number
   /** Ticks charged for killing horizontal velocity (e.g. stopping at the edge of a drop). */
   velocityKillCost: number
+  /**
+   * Ticks charged on top for a jump up a block with a deadly fall beside it (Movement.jumpHazard: lava, fire, or no
+   * ground within a safe drop next to its start or its landing), which the executor runs up to from a standstill
+   */
+  hazardJumpCost: number
 
   forceLook: boolean
   /** go through closed wooden doors, fence gates and trapdoors by opening them (the iron ones are walls) */
@@ -100,6 +105,8 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   // The jump arc already has a real tick cost (see JUMP_ONE_BLOCK_COST); add no fudge on top.
   jumpCost: 0,
   velocityKillCost: 2, // implement at a later date.
+  // a jump by a deadly drop: a stop and a standing jump, and any other way that's a few blocks longer before it
+  hazardJumpCost: 20,
   forceLook: true,
   careAboutLookAlignment: true,
   allowDiagonalBridging: true,
@@ -146,6 +153,21 @@ export function sumExclusionAreas (areas: ExclusionArea[], block: BlockInfo): nu
   let weight = 0
   for (const area of areas) weight += area(block)
   return weight
+}
+
+/** the blocks that set a player alight (lava, fire, soul fire), by registry */
+const burningByRegistry = new WeakMap<object, Set<number>>()
+function burningBlocks (registry: Bot['registry']): Set<number> {
+  let set = burningByRegistry.get(registry)
+  if (set == null) {
+    set = new Set<number>()
+    for (const name of ['lava', 'fire', 'soul_fire']) {
+      const id = registry.blocksByName[name]?.id
+      if (id != null) set.add(id)
+    }
+    burningByRegistry.set(registry, set)
+  }
+  return set
 }
 
 const cardinalVec3s: Vec3[] = [
@@ -282,6 +304,35 @@ export abstract class Movement {
   safe (pos: Vec3Properties): number {
     const block = this.world.getBlockInfo(new Vec3(pos.x, pos.y, pos.z))
     return block.physical ? 0 : COST_INF
+  }
+
+  /**
+   * Whether a fall into the column dx, dz off `pos`, from feet level dy, is one to die of: lava or fire on the way
+   * down, or no ground (or water) within maxDropDown + 1 blocks under it (LivingEntity.causeFallDamage: a fall over 3
+   * blocks hurts). A column the world doesn't have loaded isn't counted.
+   */
+  deadlyFall (pos: Vec3Properties, dx: number, dy: number, dz: number): boolean {
+    const burning = burningBlocks(this.bot.registry)
+    for (let y = dy; y >= dy - (this.settings.maxDropDown + 1); y--) {
+      const info = this.getBlockInfo(pos, dx, y, dz)
+      if (info.isInvalid) return false
+      if (burning.has(info.type)) return true
+      if (info.physical || info.liquid) return false
+    }
+    return true
+  }
+
+  /**
+   * Whether a jump up a block from `pos`'s block `dir` on (a cardinal) has a deadly fall beside it (deadlyFall): to
+   * either side of its start, to either side of its landing or past it, the columns a jump that goes wrong (a run-up
+   * off the line, a slide on landing) comes down in
+   */
+  jumpHazard (pos: Vec3Properties, dir: Vec3Properties): boolean {
+    const sx = dir.z
+    const sz = dir.x
+    return this.deadlyFall(pos, sx, 0, sz) || this.deadlyFall(pos, -sx, 0, -sz) ||
+      this.deadlyFall(pos, dir.x + sx, 1, dir.z + sz) || this.deadlyFall(pos, dir.x - sx, 1, dir.z - sz) ||
+      this.deadlyFall(pos, 2 * dir.x, 1, 2 * dir.z)
   }
 
   /**

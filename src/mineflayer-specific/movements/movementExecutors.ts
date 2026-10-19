@@ -278,6 +278,15 @@ export class ForwardJumpExecutor extends MovementExecutor {
     this.jumpInfo = this.shitter.findJumpPoint(thisMove.exitPos)
     this.jumpTries = 0
     this.leftGround = false
+    this.backingOff = false
+    this.backOffs = 0
+    this.hazard = this.findHazard(thisMove)
+    if (this.hazard != null) {
+      // by a deadly drop the run-up is the hazard one's (hazardRunUp), not the plan's
+      this.jumpInfo = null
+      this.walkingUp = false
+      return
+    }
     // with no plan, the bot walks on and jumps where a jump lands on the step (performPerTick): a jump at once, from
     // under the low ceiling of the block it came from, bumped its head, fell short, and failed the move as too low
     this.walkingUp = this.jumpInfo === null
@@ -295,6 +304,95 @@ export class ForwardJumpExecutor extends MovementExecutor {
   private jumpTries = 0
   /** the jumps that may land short (a head bumped, a step's corner caught) before the move fails as too low */
   public static readonly MAX_JUMP_TRIES = 3
+
+  /** a deadly fall beside the jump (Movement.jumpHazard): the way up and the step's block, which it must land on */
+  private hazard?: { dir: Vec3, onto: AABB }
+  /** the run-up by a deadly drop wasn't right: the bot steadies on the start's middle before it goes on */
+  private backingOff = false
+  /** the times the bot backed off for this jump */
+  private backOffs = 0
+  /** the times the bot may back off for a jump by a deadly drop before the move fails, the bot on its start */
+  public static readonly MAX_BACK_OFFS = 3
+  /** how far off the start's middle across the jump (blocks), or how fast that way (blocks a tick), is off the line */
+  public static readonly RUN_UP_SIDE_DIST = 0.25
+  public static readonly RUN_UP_SIDE_SPEED = 0.1
+
+  /** the jump's way up (from its start's block to the block it rises onto) and its step, if a deadly fall is beside it */
+  private findHazard (thisMove: Move): { dir: Vec3, onto: AABB } | undefined {
+    const start = thisMove.entryPos.floored()
+    const ddx = Math.floor(thisMove.exitPos.x) - start.x
+    const ddz = Math.floor(thisMove.exitPos.z) - start.z
+    if (ddx === 0 && ddz === 0) return undefined
+    // (a merged run's far end: its first step is along the larger offset)
+    const dir = Math.abs(ddx) >= Math.abs(ddz) ? new Vec3(Math.sign(ddx), 0, 0) : new Vec3(0, 0, Math.sign(ddz))
+    if (!this.jumpHazard(start, dir)) return undefined
+    const step = start.plus(dir)
+    return { dir, onto: new AABB(step.x, step.y, step.z, step.x + 1, step.y + 1, step.z + 1) }
+  }
+
+  /**
+   * The run-up of a jump with a deadly fall beside it: forward at a walk, the jump (and the sprint) pressed only once
+   * the simulation of a sprint jump from where the bot is, as it moves, lands with its middle over the step and stays
+   * there (JumpCalculator.jumpLandsOn). A run-up off the line (the bot off the start's middle across the jump, or going
+   * that way), or one pressed into the step's face with no jump that lands, backs off: the bot steadies on the start's
+   * middle, facing the step, and runs up again, as a player does before a jump by a drop; after MAX_BACK_OFFS the move
+   * fails with the bot standing on its start. A jump pressed on whatever came next was how a run-up at an angle went
+   * past the step's side.
+   */
+  private hazardRunUp (thisMove: Move, hazard: { dir: Vec3, onto: AABB }): void {
+    const pos = this.bot.entity.position
+    const vel = this.bot.entity.velocity
+    const middle = thisMove.entryPos.floored().offset(0.5, 0, 0.5)
+    const across = hazard.dir.x !== 0 ? pos.z - middle.z : pos.x - middle.x
+    const acrossSpeed = hazard.dir.x !== 0 ? vel.z : vel.x
+    void this.lookAtPathPos(thisMove.exitPos)
+    if (!this.backingOff && (Math.abs(across) > ForwardJumpExecutor.RUN_UP_SIDE_DIST || Math.abs(acrossSpeed) > ForwardJumpExecutor.RUN_UP_SIDE_SPEED)) {
+      this.backOff()
+    }
+    if (this.backingOff) {
+      this.bot.setControlState('jump', false)
+      this.bot.setControlState('sprint', false)
+      this.stepTowards(middle)
+      if (pos.xzDistanceTo(middle) < 0.15 && Math.hypot(vel.x, vel.z) < 0.03) this.backingOff = false
+      return
+    }
+    const lands = this.shitter.jumpLandsOn(thisMove.exitPos, hazard.onto)
+    this.bot.setControlState('left', false)
+    this.bot.setControlState('right', false)
+    this.bot.setControlState('back', false)
+    this.bot.setControlState('forward', true)
+    this.bot.setControlState('sprint', lands)
+    this.bot.setControlState('jump', lands)
+    // at the step's face with no jump that lands on it (a ceiling, a corner): back to the middle and up again
+    if (!lands && (this.bot.entity as any).isCollidedHorizontally === true && Math.hypot(vel.x, vel.z) < 0.01) this.backOff()
+  }
+
+  /**
+   * Walks the bot to `point` whichever way it faces: forward or back, left or right, by where the point is (less a few
+   * ticks of the bot's own motion) along its look and across it (Entity.moveRelative turns the keys by the yaw:
+   * forward is (-sin yaw, -cos yaw), right is (cos yaw, -sin yaw)); near it, no key, the ground's friction stops it.
+   */
+  private stepTowards (point: Vec3): void {
+    const pos = this.bot.entity.position
+    const vel = this.bot.entity.velocity
+    const yaw = this.bot.entity.yaw
+    const dx = point.x - pos.x - vel.x * 3
+    const dz = point.z - pos.z - vel.z * 3
+    const along = -Math.sin(yaw) * dx - Math.cos(yaw) * dz
+    const across = Math.cos(yaw) * dx - Math.sin(yaw) * dz
+    const dead = 0.05
+    this.bot.setControlState('forward', along > dead)
+    this.bot.setControlState('back', along < -dead)
+    this.bot.setControlState('right', across > dead)
+    this.bot.setControlState('left', across < -dead)
+  }
+
+  private backOff (): void {
+    if (++this.backOffs > ForwardJumpExecutor.MAX_BACK_OFFS) {
+      throw new CancelError(`ForwardJumpMove: no run-up lands on the step by the drop (backed off ${this.backOffs - 1} times)`)
+    }
+    this.backingOff = true
+  }
 
   async performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): Promise<boolean> {
     if (this.cI != null && !(await this.cI.allowExternalInfluence(this.bot))) {
@@ -333,7 +431,11 @@ export class ForwardJumpExecutor extends MovementExecutor {
       }
     }
 
-    void this.postInitAlignToPath(thisMove)
+    // by a deadly drop, the run-up's own keys and look till the jump is off (the path's steering, which sets its keys
+    // once its look is done, would press on at the step whatever the run-up)
+    if (this.hazard != null && !this.bot.entity.onGround) this.leftGround = true
+    if (this.hazard != null && !this.leftGround) this.hazardRunUp(thisMove, this.hazard)
+    else void this.postInitAlignToPath(thisMove)
 
     if (this.jumpInfo != null) {
       if (tickCount >= this.jumpInfo.backTick) {
@@ -355,14 +457,14 @@ export class ForwardJumpExecutor extends MovementExecutor {
       }
     }
 
-    if (this.walkingUp) {
+    if (this.walkingUp && this.hazard == null) {
       if (!this.bot.entity.onGround) this.leftGround = true
       else if (!this.leftGround) this.bot.setControlState('jump', this.shitter.jumpLandsNow(thisMove.exitPos))
     }
 
     if (this.bot.entity.position.y - thisMove.exitPos.y < -1.25) throw new CancelError('ForwardJumpMove: too low (1)')
 
-    const landed = this.walkingUp ? this.leftGround && this.bot.entity.onGround : tickCount > (this.jumpInfo?.jumpTick ?? 0) && this.bot.entity.onGround
+    const landed = this.walkingUp || this.hazard != null ? this.leftGround && this.bot.entity.onGround : tickCount > (this.jumpInfo?.jumpTick ?? 0) && this.bot.entity.onGround
     if (landed) {
       this.bot.setControlState('jump', false)
       this.bot.setControlState('sprint', true)

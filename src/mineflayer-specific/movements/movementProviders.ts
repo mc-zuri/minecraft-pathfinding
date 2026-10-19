@@ -251,6 +251,10 @@ export class ForwardJump extends MovementProvider {
     if ((cost += this.safeOrBreak(blockH, toBreak)) > COST_INF) return
     if (toPlace.length > 0) return
 
+    // a deadly fall beside the jump (a pit, the lava sea): a jump that goes wrong comes down there, and the executor
+    // runs up to it from a standstill
+    if (this.jumpHazard(pos, dir)) cost += this.settings.hazardJumpCost
+
     // Exclusion zones: blockB is the destination foot block.
     if ((cost += this.exclusionStep(blockB)) > COST_INF) return
 
