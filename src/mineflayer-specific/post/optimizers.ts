@@ -214,6 +214,39 @@ export class LandStraightAheadOpt extends MovementOptimizer {
   }
 }
 
+/**
+ * The cell a player standing at `pos` stands in, over the block that holds it up: of the blocks under its box, the
+ * one whose middle is nearest its position (Entity.getOnPos by mainSupportingBlockPos, Level.findSupportingBlock).
+ * Null when none of them has a collision box.
+ */
+export function supportedCell (world: World, pos: Vec3, width = 0.6): Vec3 | null {
+  const y = Math.floor(pos.y - 1e-3)
+  const half = width / 2
+  let best: Vec3 | null = null
+  let bestD = Infinity
+  for (let x = Math.floor(pos.x - half); x <= Math.floor(pos.x + half - 1e-7); x++) {
+    for (let z = Math.floor(pos.z - half); z <= Math.floor(pos.z + half - 1e-7); z++) {
+      if (!world.getBlockInfo(new Vec3(x, y, z)).physical) continue
+      const d = (x + 0.5 - pos.x) ** 2 + (z + 0.5 - pos.z) ** 2
+      if (d < bestD) { bestD = d; best = new Vec3(x, y + 1, z) }
+    }
+  }
+  return best
+}
+
+/**
+ * Whether a player standing at `pos` stands in a cell (supportedCell) the move's step rules keep out of (its standCost
+ * or its step exclusions at COST_INF or more), other than `startCell`, the one the moves start from
+ */
+export function standsOnForbidden (world: World, move: Move, pos: Vec3, startCell: Vec3): boolean {
+  const cell = supportedCell(world, pos)
+  if (cell == null || cell.equals(startCell)) return false
+  const moveType: any = move.moveType
+  const info = world.getBlockInfo(cell)
+  const cost = typeof moveType.standCost === 'function' ? moveType.standCost(info) : sumExclusionAreas(moveType.settings.exclusionAreasStep, info)
+  return cost >= COST_INF
+}
+
 export class DropDownOpt extends MovementOptimizer {
   readonly mergeInteracts = false
 
@@ -227,6 +260,7 @@ export class DropDownOpt extends MovementOptimizer {
     if (nextMove === undefined) return --currentIndex
 
     const firstPos = lastMove.exitPos
+    const startCell = lastMove.entryPos.floored()
 
     let flag0 = false
     let flag1 = false
@@ -266,9 +300,16 @@ export class DropDownOpt extends MovementOptimizer {
       const blockBB1 = AABB.fromBlockPos(nextMove.exitPos.offset(0, -1, 0))
       let flag = false
       let good = false
+      let forbidden = false
 
       this.sim.simulateUntil(
         (state, ticks) => {
+          // standing, on the way, on a cell the step rules keep out of (a magma floor the nether's rules forbid): the
+          // straight line cut across it where the moves went round
+          if (state.onGround && standsOnForbidden(this.world, lastMove, state.pos, startCell)) {
+            forbidden = true
+            return true
+          }
           const pBB = AABBUtils.getPlayerAABB({ position: ctx.state.pos, width: 0.6, height: 1.8 })
           const collided =
             (pBB.collides(blockBB0) && bb0solid) || (pBB.collides(blockBB1) && bb1solid && (state.onGround || state.isInWater))
@@ -289,6 +330,11 @@ export class DropDownOpt extends MovementOptimizer {
         this.world,
         1000
       )
+
+      if (forbidden) {
+        log(`[DropDownOpt] Index ${currentIndex}: the straight line stands on a cell the step exclusions keep out of.`)
+        return --currentIndex
+      }
 
       if (!good) {
         log(`[DropDownOpt] Index ${currentIndex}: Physics simulation failed to reach target safely.`)
