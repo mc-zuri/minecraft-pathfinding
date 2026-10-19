@@ -12,8 +12,9 @@ function prepareLiveRig() {
 
   bot.entity.position = new Vec3(0, 64, 0)
   bot.entity.velocity = new Vec3(0, 0, 0)
-  bot.entity.yaw = 0
-  bot.entity.pitch = 0
+  // facing north (-z) as the bot turns (bot.look: its yawDegrees, which mineflayer's physics moves it by, with the
+  // radians); entity.yaw set alone left the degrees of the rig's spawn (0, south), and forward went +z
+  void bot.look(0, 0, true)
 
   playerCtx.state.pos.set(0, 64, 0)
   playerCtx.state.vel.set(0, 0, 0)
