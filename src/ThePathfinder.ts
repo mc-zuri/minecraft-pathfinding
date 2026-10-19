@@ -915,6 +915,23 @@ export class ThePathfinder {
     delete this.currentMove
   }
 
+  /**
+   * Whether the goal holds where the bot stands: at its block (the Move's floored cell), or at a block its feet
+   * overlap (a move ends with the bot near its node, not always over its block's middle)
+   */
+  goalHolds (goal: goals.Goal): boolean {
+    const pos = this.bot.entity.position
+    const y = Math.floor(pos.y + 1e-6)
+    const at = (x: number, z: number): boolean => goal.isEnd({ x, y, z } as unknown as Move)
+    if (at(Math.floor(pos.x), Math.floor(pos.z))) return true
+    for (const x of new Set([Math.floor(pos.x - 0.3), Math.floor(pos.x + 0.3)])) {
+      for (const z of new Set([Math.floor(pos.z - 0.3), Math.floor(pos.z + 0.3)])) {
+        if (at(x, z)) return true
+      }
+    }
+    return false
+  }
+
   async cleanupAll (goal: goals.Goal, executor = this.currentExecutor): Promise<void> {
     if (goal instanceof goals.GoalDynamic && goal.dynamic) {
       goal.cleanup?.()
@@ -922,8 +939,13 @@ export class ThePathfinder {
 
     await this.cleanupBot(true)
 
-    if (executor != null) {
-      await goal.onFinish(executor)
+    // the goal's own end (GoalMineBlock digs its block, GoalPlaceBlock places) only where the goal holds: a goto ends
+    // too when its search does (no path, a timeout no nearer, cancelled), the walk of a partial path wherever it got
+    // to, and a dig from there (6 blocks off, 60 over a diamond) is one the server refuses. A walk that got there has
+    // no current executor (each finished move unsets it): any of the movements' does, onFinish takes only its bot
+    if (goal != null && this.goalHolds(goal)) {
+      const exec = executor ?? this.activeMappings.movements.values().next().value
+      if (exec != null) await goal.onFinish(exec)
     }
     this.world.cleanup?.()
 
