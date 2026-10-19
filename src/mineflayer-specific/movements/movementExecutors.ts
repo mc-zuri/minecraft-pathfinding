@@ -401,8 +401,27 @@ export class ForwardDropDownExecutor extends MovementExecutor {
     }
   }
 
+  /**
+   * The bot is on its way down already, or down: under the entry, not under the exit, its box over the move's two
+   * blocks, and nothing left to dig or place. The align steers for the exit (postInitAlignToPath), so from the ledge
+   * the bot walks off it before the align's box check holds, and on a drop of two or more it is under the entry's
+   * y - 1 before it lands, which isInitAligned takes for too low; a path started in the air (its entry the bot's
+   * position then) lands the bot at the exit's level short of it, where the box check never holds.
+   */
+  private dropUnderWay (thisMove: Move): boolean {
+    const pos = this.bot.entity.position
+    if (pos.y > thisMove.entryPos.y - 1e-3 || pos.y < thisMove.exitPos.y) return false
+    if (this.toBreakLen() > 0 || this.toPlaceLen() > 0) return false
+    const half = this.bot.entity.width / 2
+    const [ex, ez, xx, xz] = [thisMove.entryPos.x, thisMove.entryPos.z, thisMove.exitPos.x, thisMove.exitPos.z].map(Math.floor)
+    return pos.x > Math.min(ex, xx) - half && pos.x < Math.max(ex, xx) + 1 + half &&
+      pos.z > Math.min(ez, xz) - half && pos.z < Math.max(ez, xz) + 1 + half
+  }
+
   override async align (thisMove: Move, tickCount?: number, goal?: goals.Goal, lookTarget?: Vec3): Promise<boolean> {
     this.handleSneak(thisMove)
+    // a drop under way is the move started: performPerTick steers it on to the exit
+    if (this.dropUnderWay(thisMove)) return true
     return await super.align(thisMove, tickCount, goal, lookTarget)
   }
 
