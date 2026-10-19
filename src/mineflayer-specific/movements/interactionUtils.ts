@@ -527,7 +527,24 @@ export class PlaceHandler extends InteractHandler {
 
 export class BreakHandler extends InteractHandler {
   static reach = 4
+  /** digs of a block the server puts back each time (refused breaks) before the break fails */
+  static DIG_TRIES = 3
   private _breakTask?: Promise<void>
+
+  /**
+   * After the dig: true when the block stays gone for the settle's ticks (or `settled`, the wait for it, says it did),
+   * false as soon as it is there (back, or never broken)
+   */
+  private async staysGone (bot: Bot, gone: (b: Block | null) => boolean, settled?: Promise<unknown>): Promise<boolean> {
+    let done = false
+    settled?.then(() => { done = true }, () => {})
+    await Promise.resolve()
+    for (let ticks = 0; !done && ticks < DEFAULT_SETTLE_TICKS; ticks++) {
+      if (!gone(bot.blockAt(this.vec) as unknown as Block | null)) return false
+      await bot.waitForTicks(1)
+    }
+    return done || gone(bot.blockAt(this.vec) as unknown as Block | null)
+  }
 
   static fromVec (vec: Vec3, type: InteractType, offhand = false): BreakHandler {
     return new BreakHandler(vec.x, vec.y, vec.z, type, offhand)
@@ -609,39 +626,64 @@ export class BreakHandler extends InteractHandler {
         } else if (this.getCurrentItem(bot) !== item) {
           await this.equipItem(bot, item)
         }
+        // the slot the tool is in goes to the server before the dig starts, as the held attack key sends it before the
+        // dig goes on (MultiPlayerGameMode.continueDestroyBlock: ensureHasSentCarriedItem): mineflayer sends a slot
+        // change at a later tick, and a dig started first was the old item's on the server, an instant break of the
+        // client's (shears on a leaf) that the server only started, and put the block back
+        ;(bot as any)._ensureHasSentCarriedItem?.()
 
-        const block = await bot.world.getBlock(this.vec) as Block | null
-        if (block == null) {
-          logBreak('Error: Block is null')
-          throw new Error('Invalid block')
+        const gone =(b: Block | null): boolean => b != null && BlockInfo.replaceables.has(b.type)
+        for (let tries = 1; ; tries++) {
+          const block = await bot.world.getBlock(this.vec) as Block | null
+          if (block == null) {
+            logBreak('Error: Block is null')
+            throw new Error('Invalid block')
+          }
+
+          // (a block already gone, a break predicted before this one started, isn't dug: whatever is behind it would be)
+          let settled: Promise<unknown> | undefined
+          const stop = new AbortController()
+          if (!gone(block)) {
+            logBreak(`Digging ${block.name} through the crosshair`)
+            // the dig's own ticks (Player.getDestroySpeed, as bot.digTime) and some for the server's answer: the wait is
+            // the game's time, not 5 s of wall clock, which a dig by hand (stone takes 7.5 s) or a loaded machine outlasts
+            const digTicks = Math.ceil((bot.digTime?.(block) ?? 0) / 50)
+            settled = waitForSettledBlockStateAtPosition(
+              bot,
+              this.blockInfo.position,
+              gone,
+              { timeoutMs: 0, timeoutTicks: digTicks + 100, settleTicks: DEFAULT_SETTLE_TICKS, signal: stop.signal }
+            )
+            settled.catch(() => {})
+            // only the block the crosshair hits breaks, as vanilla's player breaks it (a leaf in front of it first)
+            this._breakTask = digInSight(bot, block)
+            // a dig that fails (aborted, out of reach) ends the wait with its error
+            await Promise.race([settled, this._breakTask])
+            logBreak('Dig task resolved. Now waiting for world update.')
+          }
+
+          // the dig is over: the block is broken once it stays gone for the settle's ticks. One back (or never gone) is
+          // a break the server refused: the client's prediction (MultiPlayerGameMode.destroyBlock, the dig's end) put
+          // back by the server's acknowledgement (BlockStatePredictionHandler.endPredictionsUpTo), as an instant break
+          // by a tool the server didn't know was held yet (the slot sent at the next tick, ensureHasSentCarriedItem). A
+          // player holding the attack key on it starts the dig again (Minecraft.continueAttack), and so does the bot.
+          const broken = await this.staysGone(bot, gone, settled)
+          stop.abort()
+          if (broken) break
+          if (this.task?.canceled === true) return
+          if (tries >= BreakHandler.DIG_TRIES) throw new Error(`the ${block.name} at ${this.vec.toString()} came back after ${tries} digs`)
+          logBreak(`the block at ${this.vec} came back: dig ${tries + 1}`)
         }
-
-        logBreak(`Digging ${block.name} through the crosshair`)
-        // the dig's own ticks (Player.getDestroySpeed, as bot.digTime) and some for the server's answer: the wait is
-        // the game's time, not 5 s of wall clock, which a dig by hand (stone takes 7.5 s) or a loaded machine outlasts
-        const digTicks = Math.ceil((bot.digTime?.(block) ?? 0) / 50)
-        // only the block the crosshair hits breaks, as vanilla's player breaks it (a leaf in front of it first)
-        this._breakTask = digInSight(bot, block)
-
-        logBreak('Dig task resolved. Now waiting for world update.')
-
-        const settled = waitForSettledBlockStateAtPosition(
-          bot,
-          this.blockInfo.position,
-          (block) => block != null && BlockInfo.replaceables.has(block.type),
-          { timeoutMs: 0, timeoutTicks: digTicks + 100, settleTicks: DEFAULT_SETTLE_TICKS }
-        )
-        settled.catch(() => {})
-        // a dig that fails (aborted, out of reach) ends the wait with its error
-        await Promise.race([settled, this._breakTask])
-        await settled
 
         // the block is gone: the dig's own promise gets a few ticks to answer (mineflayer's diggingCompleted), not
         // for good (a dig whose answer never came held the move's start until the caller gave up)
-        let answered = false
-        void this._breakTask.then(() => { answered = true }, () => { answered = true })
-        for (let i = 0; i < DIG_ANSWER_TICKS && !answered; i++) await bot.waitForTicks(1)
-        if (answered) await this._breakTask
+        const breakTask = this._breakTask
+        if (breakTask != null) {
+          let answered = false
+          void breakTask.then(() => { answered = true }, () => { answered = true })
+          for (let i = 0; i < DIG_ANSWER_TICKS && !answered; i++) await bot.waitForTicks(1)
+          if (answered) await breakTask
+        }
 
         if (this.task != null) this.task.finish()
         break

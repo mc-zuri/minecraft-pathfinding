@@ -42,6 +42,9 @@ export function createPlayerRig(world: EventedMutableWorld, options: {
     flags: 0,
     teleportId: 0
   })
+  // 1.21.4+: the server starts the level's load (ClientboundGameEventPacket.LEVEL_CHUNKS_LOAD_START), and the player
+  // ticks once its chunk is loaded (LocalPlayer.tick: hasClientLoaded); without it the bot never ticks
+  fakePlayer._client.emit('game_state_change', { reason: 'level_chunks_load_start', gameMode: 0 })
   if (world instanceof FakeWorld && options.trackRenderDistance !== false) {
     world.trackBot(fakePlayer)
   }
