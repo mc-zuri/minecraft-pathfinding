@@ -32,7 +32,6 @@ export class BlockInfo {
   /** doors, fence gates and trapdoors, the iron ones too: gone through by their state's shapes, never dug (passages.ts) */
   static readonly passages = new Map<number, PassageKind>()
   static readonly emptyBlocks = new Set()
-  static readonly scaffoldingBlockItems = new Set<number>()
   static readonly mlgItems = new Set<number>()
   /** ice that turns to water when broken over a liquid or a solid block (IceBlock.playerDestroy: meltsInto) */
   static readonly meltingIce = new Set<number>()
@@ -194,9 +193,6 @@ export class BlockInfo {
 
     // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     if (registry.blocksByName.grass) BlockInfo.replaceables.add(registry.blocksByName.grass.id)
-
-    BlockInfo.scaffoldingBlockItems.add(registry.itemsByName.dirt.id)
-    BlockInfo.scaffoldingBlockItems.add(registry.itemsByName.cobblestone.id)
 
     registry.blocksArray
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

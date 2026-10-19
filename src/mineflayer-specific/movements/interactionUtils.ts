@@ -13,6 +13,7 @@ import { AABB, AABBUtils, BlockFace } from '@nxg-org/mineflayer-util-plugin'
 import { CancelError } from '../exceptions'
 import { MovementOptions } from './movement'
 import { MovementExecutor } from './movementExecutor'
+import { scaffoldItem } from './scaffolding'
 import type { Block, RayType } from '../../types'
 import { faceToVec, Task } from '../../utils'
 import { DEFAULT_SETTLE_TICKS, handleBlockEvent, waitForSettledBlockPredicate, toBlockPositionEventName, waitForSettledBlockStateAtPosition } from '../../customBlockEvents'
@@ -229,7 +230,8 @@ export class PlaceHandler extends InteractHandler {
         return bot.inventory.items().find((item) => item.name === 'water_bucket') ?? null
       }
       case 'solid': {
-        return bot.inventory.items().find((item) => BlockInfo.scaffoldingBlockItems.has(item.type)) ?? null
+        // the cheapest of the scaffolding the inventory holds (MovementOptions.scaffoldingBlocks)
+        return scaffoldItem(bot, this.move?.settings.scaffoldingBlocks)
       }
       case 'replaceable': {
         throw new Error('Not implemented')

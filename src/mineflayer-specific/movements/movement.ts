@@ -11,6 +11,7 @@ import type { Block } from '../../types'
 import { Vec3Properties } from '../../types'
 import { COST_INF, SPRINT_ONE_BLOCK_COST, WALK_ONE_BLOCK_COST, WALK_ONE_IN_WATER_COST } from './costs'
 import type { ExclusionArea } from './exclusionZones'
+import { DEFAULT_SCAFFOLDING_BLOCKS } from './scaffolding'
 
 export interface MovementOptions {
   allowDiagonalBridging: boolean
@@ -46,9 +47,15 @@ export interface MovementOptions {
   canDig: boolean
   canPlace: boolean
   /**
-   * blocks of the scaffolding (BlockInfo.scaffoldingBlockItems) the search leaves out of its plans: a path places at
-   * most what the inventory holds less these, so that the bot is never left mid-bridge with none (a place that failed
-   * and was tried again, a block the bot used for something else)
+   * the blocks the bot builds with (bridges, towers, a floor under a step), as item names, cheapest first: the search's
+   * budget counts every one the inventory holds, and a place takes the first it holds (DEFAULT_SCAFFOLDING_BLOCKS:
+   * full solid blocks that don't fall, with no block entity, worth little)
+   */
+  scaffoldingBlocks: string[]
+  /**
+   * blocks of the scaffolding (scaffoldingBlocks) the search leaves out of its plans: a path places at most what the
+   * inventory holds less these, so that the bot is never left mid-bridge with none (a place that failed and was tried
+   * again, a block the bot used for something else)
    */
   scaffoldReserve: number
   dontCreateFlow: boolean
@@ -89,6 +96,7 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   closeDoorsBehind: 'night',
   canDig: true,
   canPlace: true,
+  scaffoldingBlocks: DEFAULT_SCAFFOLDING_BLOCKS as string[],
   scaffoldReserve: 4,
   dontCreateFlow: true,
   dontMineUnderFallingBlock: true,
@@ -139,6 +147,7 @@ export function buildMovementOptions (settings: Partial<MovementOptions> = {}): 
   merged.exclusionAreasStep = [...merged.exclusionAreasStep]
   merged.exclusionAreasBreak = [...merged.exclusionAreasBreak]
   merged.exclusionAreasPlace = [...merged.exclusionAreasPlace]
+  merged.scaffoldingBlocks = [...merged.scaffoldingBlocks]
   return merged
 }
 

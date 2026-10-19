@@ -5,6 +5,7 @@ import { BlockInfo } from './mineflayer-specific/world/cacheWorld'
 import { BlockFace, AABBUtils } from '@nxg-org/mineflayer-util-plugin'
 
 import { World } from './mineflayer-specific/world/worldInterface'
+import { scaffoldCount } from './mineflayer-specific/movements/scaffolding'
 
 export function printBotControls (bot: Bot, log: (...args: unknown[]) => void = console.log): void {
   const controls = {
@@ -69,21 +70,17 @@ export const debug = (bot: Bot | undefined, ...args: any[]): void => {
   console.trace(...args)
 }
 
-export const getScaffoldCount = (bot: Bot): number => {
-  if (!BlockInfo.initialized) throw new Error('BlockInfo not initialized')
-  const amt = bot.inventory.items().reduce((acc, item) => (BlockInfo.scaffoldingBlockItems.has(item.type) ? item.count + acc : acc), 0)
-  if (bot.game.gameMode === 'creative') {
-    return amt > 0 ? Infinity : 0
-  }
-  return amt
+/** the blocks of the scaffolding (the settings' scaffoldingBlocks, the items PlaceHandler places) the inventory holds */
+export const getScaffoldCount = (bot: Bot, settings?: { scaffoldingBlocks?: readonly string[] }): number => {
+  return scaffoldCount(bot, settings?.scaffoldingBlocks)
 }
 
 /**
  * The blocks a search may plan to place: the scaffolding the inventory holds (the items PlaceHandler places), less the
  * reserve the plan keeps back (scaffoldReserve)
  */
-export const getScaffoldBudget = (bot: Bot, settings: { scaffoldReserve: number }): number => {
-  return Math.max(0, getScaffoldCount(bot) - settings.scaffoldReserve)
+export const getScaffoldBudget = (bot: Bot, settings: { scaffoldReserve: number, scaffoldingBlocks?: readonly string[] }): number => {
+  return Math.max(0, getScaffoldCount(bot, settings) - settings.scaffoldReserve)
 }
 
 /**

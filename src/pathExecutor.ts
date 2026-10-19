@@ -457,7 +457,7 @@ export class PathExecutor {
         if (placesLeft > 0 && placesLeft > getScaffoldBudget(bot, executor.settings)) {
           log('%d blocks left to place on the path, a budget of %d: searching again', placesLeft, getScaffoldBudget(bot, executor.settings))
           this.setResetReason('inventoryChanged')
-          throw new ResetError('inventoryChanged', `${placesLeft} blocks to place, ${getScaffoldCount(bot)} held`)
+          throw new ResetError('inventoryChanged', `${placesLeft} blocks to place, ${getScaffoldCount(bot, executor.settings)} held`)
         }
 
         runnerStage = 'align'

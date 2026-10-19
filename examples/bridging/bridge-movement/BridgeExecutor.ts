@@ -543,7 +543,7 @@ export class BridgeExecutor extends MovementExecutor {
     let count = 0
     for (let i = 0; i < 9; i++) {
       const slot = this.bot.inventory.slots[36 + i]
-      if (slot != null && slot.count > 0 && BlockInfo.scaffoldingBlockItems.has(slot.type)) {
+      if (slot != null && slot.count > 0 && this.settings.scaffoldingBlocks.includes(slot.name)) {
         count += slot.count
       }
     }
