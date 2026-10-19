@@ -765,6 +765,9 @@ export class ThePathfinder {
                   task = null
                   res1 = null
                 })
+                // (the loop returns without waiting on the walk when the search ends with no path, a timeout or a
+                // cancel: a walk that fails after that rejects with no one to hear it, which ended the process)
+                task.catch((err) => log('_goto: the walk of the partial path failed: %s', (err as Error)?.message))
               } else {
                 // Update the unoptimized path in place!
                 // perform() will automatically catch the newly added tail.
