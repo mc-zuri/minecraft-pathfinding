@@ -40,6 +40,12 @@ export interface MovementOptions {
   closeDoorsBehind: boolean | 'night'
   canDig: boolean
   canPlace: boolean
+  /**
+   * blocks of the scaffolding (BlockInfo.scaffoldingBlockItems) the search leaves out of its plans: a path places at
+   * most what the inventory holds less these, so that the bot is never left mid-bridge with none (a place that failed
+   * and was tried again, a block the bot used for something else)
+   */
+  scaffoldReserve: number
   dontCreateFlow: boolean
   dontMineUnderFallingBlock: boolean
 
@@ -78,6 +84,7 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   closeDoorsBehind: 'night',
   canDig: true,
   canPlace: true,
+  scaffoldReserve: 4,
   dontCreateFlow: true,
   dontMineUnderFallingBlock: true,
   allow1by1towers: true,
@@ -459,7 +466,8 @@ export abstract class Movement {
 
   safeOrPlace (block: BlockInfo, toPlace: PlaceHandler[], type: InteractType = 'solid'): number {
     if (!this.settings.canPlace) return COST_INF
-    if (this.currentMove.remainingBlocks <= 0) return COST_INF
+    // the blocks the move places before this one come out of the budget too (a diagonal's two)
+    if (this.currentMove.remainingBlocks - toPlace.length <= 0) return COST_INF
 
     if (block.block === null) return COST_INF // Don't know its type, but that's only replaceables so just return.
     if (block.solidFull) return 0 // block is already physical at location.

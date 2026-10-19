@@ -115,7 +115,9 @@ test('goto ends with the bot where the goal holds, not short of its last block',
 
 test('getPathTo succeeds when it needs a one-block tower and the bot has a block to place', async () => {
   const rig = preparePathRig({
-    inventoryItems: (mcData) => [{ type: mcData.itemsByName.dirt.id, count: 2, name: 'dirt' }]
+    inventoryItems: (mcData) => [{ type: mcData.itemsByName.dirt.id, count: 2, name: 'dirt' }],
+    // (none kept back: the two are the tower's)
+    moveSettings: { scaffoldReserve: 0 }
   })
 
   try {

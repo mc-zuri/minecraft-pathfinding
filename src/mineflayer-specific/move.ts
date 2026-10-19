@@ -15,7 +15,6 @@ export class Move implements PathData {
   targetPos: Vec3
 
   public readonly cachedVec: Vec3
-  // remainingBlocks: number = 0 // TODO: implement this
 
   toPlace: PlaceHandler[]
   toBreak: BreakHandler[]
@@ -29,6 +28,11 @@ export class Move implements PathData {
     public readonly z: number,
     toPlace: PlaceHandler[],
     toBreak: BreakHandler[],
+    /**
+     * the blocks of the search's budget left once the path up to here has placed its own: the scaffolding the
+     * inventory held when the search started less the reserve (scaffoldReserve), less each block placed on the way.
+     * Under 0 the move is none (MovementHandler.getNeighbors leaves it out).
+     */
     public readonly remainingBlocks: number,
     public readonly cost: number,
     public readonly moveType: MovementProvider,

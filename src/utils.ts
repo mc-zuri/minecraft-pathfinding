@@ -79,6 +79,14 @@ export const getScaffoldCount = (bot: Bot): number => {
 }
 
 /**
+ * The blocks a search may plan to place: the scaffolding the inventory holds (the items PlaceHandler places), less the
+ * reserve the plan keeps back (scaffoldReserve)
+ */
+export const getScaffoldBudget = (bot: Bot, settings: { scaffoldReserve: number }): number => {
+  return Math.max(0, getScaffoldCount(bot) - settings.scaffoldReserve)
+}
+
+/**
    * Gen here, this code is alright.
    * Taken from: https://github.com/PrismarineJS/mineflayer-pathfinder/blob/d69a02904bc83f4c36598ae90d470a009a130105/index.js#L285
    */

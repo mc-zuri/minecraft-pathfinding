@@ -51,7 +51,7 @@ import { HandlerOpts } from './types'
 import { Task } from '@nxg-org/mineflayer-util-plugin'
 
 import { reconstructPath } from './abstract/algorithms'
-import { closestPointOnLineSegment, getScaffoldCount, getNormalizedPos, getSupportedStartPos } from './utils'
+import { closestPointOnLineSegment, getScaffoldBudget, getNormalizedPos, getSupportedStartPos } from './utils'
 import { World } from './mineflayer-specific/world/worldInterface'
 import { DEFAULT_SETTLE_TICKS, handleBlockEvent, handleSettledBlockEvent } from './customBlockEvents'
 import { PathExecutor, type ExecutionMappings } from './pathExecutor'
@@ -546,11 +546,12 @@ export class ThePathfinder {
     startPos = getSupportedStartPos(this.world, getNormalizedPos(this.bot, startPos))
     log('Generating path from %O to %O', startPos, goal)
 
+    // the plan's budget of blocks: the scaffolding the inventory holds now, less the reserve
     const startMove = Move.startMove(
       new IdleMovement(this.bot, this.world),
       startPos.clone(),
       startVel.clone(),
-      getScaffoldCount(this.bot)
+      getScaffoldBudget(this.bot, settings)
     )
 
     this.executionRunner.setCurrentMove(startMove)

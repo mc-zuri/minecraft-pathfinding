@@ -374,9 +374,9 @@ export class MovementHandler implements AMovementProvider<Move> {
       newMove.loadLocalData(pos, this.boundaries, this.localData, this.toClear)
       const from = moves.length
       newMove.provideMovements(currentMove, moves, this.goal, closed)
-      // (out of a doorway only by the way its door lets the bot by)
+      // (out of a doorway only by the way its door lets the bot by; no more blocks placed than the budget has left)
       for (let i = moves.length - 1; i >= from; i--) {
-        if (!newMove.leavesStartCell(currentMove, moves[i])) moves.splice(i, 1)
+        if (moves[i].remainingBlocks < 0 || !newMove.leavesStartCell(currentMove, moves[i])) moves.splice(i, 1)
       }
     }
 
