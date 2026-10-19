@@ -415,19 +415,25 @@ export class GoalLookAt extends Goal {
     return new GoalLookAt(world, block.position.x, block.position.y, block.position.z, 1, 1, distance, height)
   }
 
+  /**
+   * Where the eyes are at a node: over the middle of its block (a Move's x, y, z are the block's, floored), at the eye
+   * height over its floor. The block's corner was taken for the eyes, 0.7 blocks off: the goal held 4.35 blocks off a
+   * block on its +x +z side at a distance of 4, and not 3.7 off on its -x -z side.
+   */
+  eyesAt (node: { x: number, y: number, z: number }): Vec3 {
+    return new Vec3(node.x + 0.5, node.y + this.eyeHeight, node.z + 0.5)
+  }
+
   heuristic (node: Move): number {
-    const dx = this.x - node.x
-    const dy = this.y - (node.y + this.eyeHeight) // eye level
-    const dz = this.z - node.z
-    return Math.sqrt(dx * dx + dz * dz + dy * dy) * COST_HEURISTIC
+    return this.distHeuristic(node) * COST_HEURISTIC
   }
 
   distHeuristic (node: Move): number {
-    const dx = this.x - node.x
-    const dy = this.y - (node.y + this.eyeHeight) // eye level
-    const dz = this.z - node.z
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
-    return distance
+    const eyes = this.eyesAt(node)
+    const dx = this.x - eyes.x
+    const dy = this.y - eyes.y
+    const dz = this.z - eyes.z
+    return Math.sqrt(dx * dx + dy * dy + dz * dz)
   }
 
   /**
@@ -438,8 +444,8 @@ export class GoalLookAt extends Goal {
     const dist = this.distHeuristic(node)
 
     if (dist > this.distance + 3) return false
-    const pos = new Vec3(node.x, node.y + this.eyeHeight, node.z)
-    const dir = new Vec3(this.x - node.x, this.y - pos.y, this.z - node.z).normalize()
+    const pos = this.eyesAt(node)
+    const dir = new Vec3(this.x - pos.x, this.y - pos.y, this.z - pos.z).normalize()
     const raycast = this.world.raycast(pos, dir, this.distance + 3)
     const intsec = raycast?.intersect ?? null
     if (intsec !== null && intsec.distanceTo(pos) <= this.distance && this.bb.containsVec(intsec)) return true
