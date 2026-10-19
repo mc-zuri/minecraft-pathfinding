@@ -286,7 +286,8 @@ abstract class DropDownProvider extends MovementProvider {
         min = (this.bot.game as any).minY
         // min = isBlockTypeInChunks(BlockInfo.WATER1.block!, chunk) ? (this.bot.game as any).minY : node.y - this.settings.maxDropDown;
       } else {
-        min = node.y - this.settings.maxDropDown
+        // the ground's block, a block under the feet that land on it
+        min = node.y - this.settings.maxDropDown - 1
       }
     }
 
@@ -297,7 +298,9 @@ abstract class DropDownProvider extends MovementProvider {
         return blockLand
       }
       if (blockLand.physical) {
-        if (node.y - blockLand.position.y <= this.settings.maxDropDown) {
+        // the drop is to the feet, on top of this block: a fall of maxDropDown is one to live through
+        // (LivingEntity.calculateFallPower: the fall less SAFE_FALL_DISTANCE, 3), as fallSafe and deadlyFall have it
+        if (node.y - (blockLand.position.y + 1) <= this.settings.maxDropDown) {
           return this.getBlockInfo(blockLand.position, 0, 1, 0)
         }
         // return null;

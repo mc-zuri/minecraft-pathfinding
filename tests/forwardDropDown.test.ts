@@ -71,3 +71,31 @@ test('a drop of two off a platform two high, three wide, is a ForwardDropDown to
     rig.stopPassivePhysics()
   }
 })
+
+test('a drop of maxDropDown (3) off a platform is a ForwardDropDown, one of 4 is none (the fall is to the feet, on top of the ground\'s block)', { timeout: 30000 }, async () => {
+  for (const [height, landings] of [[3, ['0,64,-1']], [4, []]] as const) {
+    // a platform x -2 to 2, z 0 to 2, `height` blocks high on the floor (the feet on it at 64 + height)
+    const { rig } = createCacheWorld('1.21.11', 64, new Vec3(0.5, 64 + height, 1.5))
+    const bot: any = rig.bot
+    try {
+      for (let x = -2; x <= 2; x++) for (let z = 0; z <= 2; z++) for (let y = 64; y < 64 + height; y++) bot.world.setBlock(new Vec3(x, y, z), 'stone')
+      bot.loadPlugin(createPlugin({ pathfinderSettings: { partialPathProducer: false, searchTimeoutMs: 8000 } } as any))
+      const settings = { ...bot.pathfinder.defaultMoveSettings, canDig: false, canPlace: false }
+      assert.equal(settings.maxDropDown, 3)
+      bot.pathfinder.setMoveOptions(settings)
+      const provider = new ForwardDropDown(bot, bot.pathfinder.world, settings)
+      const start = Move.startMove(provider, new Vec3(0.5, 64 + height, 0.5), new Vec3(0, 0, 0), 1000)
+      const out: Move[] = []
+      provider.provideMovements(start, out, new goals.GoalBlock(0, 64, -4), new Set())
+      // (before: none off a platform 3 high, the limit taken to the ground's block, a fall of 2)
+      assert.deepEqual(out.map(m => `${m.x},${m.y},${m.z}`), landings, `${height} high`)
+      if (height === 3) {
+        for (let i = 0; i < 40 && bot.entity.onGround !== true; i++) await new Promise(resolve => setTimeout(resolve, 50))
+        await withTimeout(bot.pathfinder.goto(new goals.GoalBlock(0, 64, -4)), 20000, `timed out at ${bot.entity.position}`)
+        assert.ok(bot.entity.position.distanceTo(new Vec3(0.5, 64, -3.5)) < 1.2, `at ${bot.entity.position.toString()}`)
+      }
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  }
+})
