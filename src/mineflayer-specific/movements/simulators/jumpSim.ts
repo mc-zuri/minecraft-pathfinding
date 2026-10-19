@@ -4,7 +4,7 @@ import { AABB, AABBUtils } from '@nxg-org/mineflayer-util-plugin'
 import { Vec3 } from 'vec3'
 import { World } from '../../world/worldInterface'
 import { BaseSimulator, Controller, EPhysicsCtx, OnGoalReachFunction, SimulationGoal } from '@nxg-org/mineflayer-physics-util'
-import { smartMovement, strafeMovement, wrapRadians } from '../controls'
+import { setStateYaw, smartMovement, strafeMovement, wrapRadians } from '../controls'
 
 // const ZERO = (0 * Math.PI) / 12
 const PI_OVER_TWELVE = (1 * Math.PI) / 12
@@ -173,7 +173,7 @@ export class JumpSim extends BaseSimulator<PlayerState> {
     return (state, ticks) => {
       const dx = nextPoint.x - state.pos.x
       const dz = nextPoint.z - state.pos.z
-      state.yaw = Math.atan2(-dx, -dz)
+      setStateYaw(state, Math.atan2(-dx, -dz))
     }
   }
 

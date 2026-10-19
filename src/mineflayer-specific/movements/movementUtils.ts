@@ -12,6 +12,7 @@ import { World } from '../world/worldInterface'
 import v, { Vec3 } from 'vec3'
 import { AABB, AABBUtils } from '@nxg-org/mineflayer-util-plugin'
 import { JumpSim } from './simulators/jumpSim'
+import { setStateYaw } from './controls'
 import type { Block } from '../../types'
 import type { PCChunk } from 'prismarine-chunk'
 
@@ -26,7 +27,7 @@ export function stateLookAt (state: IEntityState, point: Vec3): void {
   const yaw = Math.atan2(-delta.x, -delta.z)
   const groundDistance = Math.sqrt(delta.x * delta.x + delta.z * delta.z)
   const pitch = Math.atan2(delta.y, groundDistance)
-  state.yaw = yaw
+  setStateYaw(state, yaw)
   state.pitch = pitch
 }
 

@@ -46,6 +46,33 @@ export function wrapRadians (radians: number): number {
   // return tmp < 0 ? tmp + Math.PI : tmp > 0 ? tmp - Math.PI : tmp;
 }
 
+// mineflayer's mouse step (physics.js roundingGCD): Minecraft's MouseHandler.turnPlayer at the default sensitivity
+const MOUSE_F = Math.fround(Math.fround(Math.fround(100 / 200) * Math.fround(0.6)) + Math.fround(0.2))
+const YAW_STEP = Math.fround(Math.fround(Math.fround(Math.fround(0.15) * 8) * MOUSE_F * MOUSE_F) * MOUSE_F)
+
+/**
+ * Turns a simulated player to `yaw` (radians) as mineflayer's bot.look(yaw, pitch, true) turns the bot: the engine
+ * moves a player by the float degrees it holds (yawDegrees, as vanilla's Entity.moveRelative turns the input by
+ * getYRot()), which a state made from the bot (EPhysicsCtx.FROM_BOT) keeps, so a controller that set state.yaw alone
+ * steered nothing: the simulation went on the way the bot faced. The degrees are turned by the wrapped difference and
+ * rounded to the mouse's step (physics.js setAngleDegrees), the radians made from them (fromNotchianYaw).
+ */
+export function setStateYaw (state: { yaw: number, yawDegrees?: number }, yaw: number): void {
+  const held = state.yawDegrees
+  if (held == null) {
+    state.yaw = yaw
+    return
+  }
+  const wanted = Math.fround((Math.PI - yaw) * (180 / Math.PI))
+  let d = Math.fround(Math.fround(wanted - held) % 360)
+  if (d < -180) d = Math.fround(d + 360)
+  else if (d > 180) d = Math.fround(d - 360)
+  const degrees = Math.fround(Math.round(Math.fround(Math.fround(held + d) / YAW_STEP)) * YAW_STEP)
+  state.yawDegrees = degrees
+  const radians = (Math.PI - (Math.PI / 180) * degrees) % TWO_PI
+  state.yaw = radians < 0 ? radians + TWO_PI : radians
+}
+
 // currentPoint: Vec3
 function findDiff (position: Vec3, velocity: Vec3, yaw: number, pitch: number, nextPoint: Vec3, onGround: boolean): number {
   const xzVel = velocity.offset(0, -velocity.y, 0)
