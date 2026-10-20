@@ -10,9 +10,10 @@ export function loadMcData(version: string) {
   const mcData = registry(version)
   if (!initializedVersions.has(version)) {
     initSetup(mcData)
-    BlockInfo.init(mcData)
     initializedVersions.add(version)
   }
+  // (the block sets follow the version: made again when it isn't the last one's)
+  BlockInfo.init(mcData)
 
   return {
     mcData,

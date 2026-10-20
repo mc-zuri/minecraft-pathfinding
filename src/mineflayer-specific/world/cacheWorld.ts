@@ -86,9 +86,18 @@ export class BlockInfo {
     this.isInvalid = this.type === -1
   }
 
+  /** the version the block sets were made for (init) */
+  static version?: string
+
   static init (registry: MCData): void {
-    if (BlockInfo.initialized) return
+    // The sets are by block id, which differ from version to version: a bot of another version than the last one's
+    // (another bot in the process, the next test) makes them again. Made once for the first, a 26.3 bot after a
+    // 1.20.4 one took water's id for another block's, and planned no swim.
+    const version = (registry as any).version?.minecraftVersion as string | undefined
+    if (BlockInfo.initialized && BlockInfo.version === version) return
+    if (BlockInfo.initialized) BlockInfo.clearSets()
     BlockInfo.initialized = true
+    BlockInfo.version = version
 
     if (registry.blocksByName.soul_sand?.id != null) {
       BlockInfo.soulsandId = registry.blocksByName.soul_sand.id // might be broke, who knows
@@ -219,6 +228,16 @@ export class BlockInfo {
       BlockInfo.passages.set(block.id, kind)
       if (openableByHand(block.name)) BlockInfo.openable.add(block.id)
     })
+  }
+
+  /** empties the sets init makes (another version's ids) */
+  private static clearSets (): void {
+    for (const set of [BlockInfo.interactableBlocks, BlockInfo.blocksCantBreak, BlockInfo.blocksToAvoid, BlockInfo.climbables,
+      BlockInfo.carpets, BlockInfo.fences, BlockInfo.replaceables, BlockInfo.liquids, BlockInfo.waters, BlockInfo.gravityBlocks,
+      BlockInfo.openable, BlockInfo.emptyBlocks, BlockInfo.mlgItems, BlockInfo.meltingIce]) {
+      set.clear()
+    }
+    BlockInfo.passages.clear()
   }
 
   /** a door, fence gate or trapdoor (passages.ts): what kind, else null */
