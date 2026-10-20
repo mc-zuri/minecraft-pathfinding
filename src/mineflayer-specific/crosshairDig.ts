@@ -138,6 +138,9 @@ export async function digInSight (bot: Bot, block: Block, options: DigInSightOpt
     const target = bot.blockAt(pos)
     if (target == null || target.type !== type) return
     const aim = await aimAt(bot, target, reach)
+    // (aborted while it turned)
+    const signal: AbortSignal | undefined = options.signal
+    if (signal?.aborted === true) throw signal.reason ?? new Error('aborted')
     if (aim.point == null) {
       const other = aim.obstruction
       if (other != null && !other.position.equals(pos) && obstructions > 0 && digObstruction(other)) {
@@ -146,8 +149,14 @@ export async function digInSight (bot: Bot, block: Block, options: DigInSightOpt
         continue
       }
       // nothing in the way the crosshair finds (beyond reach, a ray through a gap), or a block not to break: the dig
-      // as mineflayer does it
-      await bot.dig(target, true)
+      // as mineflayer does it (stopped by the signal as the crosshair's is)
+      const onAbort = (): void => bot.stopDigging()
+      options.signal?.addEventListener('abort', onAbort, { once: true })
+      try {
+        await bot.dig(target, true)
+      } finally {
+        options.signal?.removeEventListener('abort', onAbort)
+      }
       return
     }
     const done = mouse ? await mouseDig(bot, target, aim.point, reach, options.signal) : await crosshairDig(bot, target, aim.point, aim.face, reach, options.signal)

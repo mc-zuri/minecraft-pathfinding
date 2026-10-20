@@ -532,6 +532,8 @@ export class BreakHandler extends InteractHandler {
   /** digs of a block the server puts back each time (refused breaks) before the break fails */
   static DIG_TRIES = 3
   private _breakTask?: Promise<void>
+  /** the abort of the dig under way (digInSight's signal) */
+  private digStop?: AbortController
 
   /**
    * After the dig: true when the block stays gone for the settle's ticks (or `settled`, the wait for it, says it did),
@@ -657,8 +659,11 @@ export class BreakHandler extends InteractHandler {
               { timeoutMs: 0, timeoutTicks: digTicks + 100, settleTicks: DEFAULT_SETTLE_TICKS, signal: stop.signal }
             )
             settled.catch(() => {})
-            // only the block the crosshair hits breaks, as vanilla's player breaks it (a leaf in front of it first)
-            this._breakTask = digInSight(bot, block)
+            // only the block the crosshair hits breaks, as vanilla's player breaks it (a leaf in front of it first);
+            // an abort ends it (abort: the signal), not only the dig under way (a dig stopped by stopDigging alone
+            // was taken for the crosshair gone off the block, and digInSight dug on, mineflayer's plain dig)
+            this.digStop = new AbortController()
+            this._breakTask = digInSight(bot, block, { signal: this.digStop.signal })
             // a dig that fails (aborted, out of reach) ends the wait with its error
             await Promise.race([settled, this._breakTask])
             logBreak('Dig task resolved. Now waiting for world update.')
@@ -725,6 +730,7 @@ export class BreakHandler extends InteractHandler {
         }
         case 'solid': {
           logBreak('Calling bot.stopDigging()')
+          this.digStop?.abort(new CancelError('the dig was aborted'))
           bot.stopDigging()
           break
         }

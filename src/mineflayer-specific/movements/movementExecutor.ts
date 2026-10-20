@@ -97,7 +97,30 @@ export abstract class MovementExecutor extends Movement {
     delete this.interactionError
     delete this.resetReason
     this.task.finish()
+    // the walk this executor ran is over (the move failed, its start took too long, goto ended): its digs and places
+    // stop, and a start still under way (performInit's digs, one after another) goes no further. Left on, a
+    // ForwardJump given up on after 204 ticks of its start dug on beside the next path's moves, which run on this same
+    // executor: mineflayer ends a dig when another is asked for ('Digging aborted'), and the old dig's failure failed
+    // the new move ('interaction failed') as its block broke.
+    this.run++
+    for (const interaction of this.inFlight) void interaction._abort(this.bot).catch(() => {})
+    this.inFlight.clear()
+    this.endedMove = this.currentMove
   }
+
+  override loadMove (move: Move): void {
+    super.loadMove(move)
+    // (the same move walked again is under way again)
+    if (move === this.endedMove) this.endedMove = undefined
+  }
+
+  /** the move of the walk that ended last (reset), until it is walked again: its interactions start no more */
+  private endedMove?: Move
+
+  /** the walk the executor's interactions belong to: one that ended (reset) has its interactions given up */
+  private run = 0
+  /** the interactions under way (performInteraction) */
+  private readonly inFlight = new Set<InteractHandler>()
 
   protected getRemainingBreaks (): BreakHandler[] {
     if (!this.currentMove) return []
@@ -670,8 +693,14 @@ export abstract class MovementExecutor extends Movement {
    * Generalized function to perform an interaction.
    */
   async performInteraction (interaction: PlaceHandler | BreakHandler, opts: InteractOpts = {}): Promise<void> {
+    const ended = this.endedMove
+    if (ended != null && (ended.toBreak.includes(interaction as BreakHandler) || ended.toPlace.includes(interaction as PlaceHandler))) {
+      throw new AbortError('the walk of the interaction ended')
+    }
+    const run = this.run
     this._cI = interaction
     interaction.loadMove(this)
+    this.inFlight.add(interaction)
     try {
       if (interaction instanceof PlaceHandler) {
         await this.performPlace(interaction, opts)
@@ -679,15 +708,20 @@ export abstract class MovementExecutor extends Movement {
         await this.performBreak(interaction, opts)
       }
     } catch (err) {
+      // an interaction of a walk that ended fails nothing now: the move it was for is over
+      if (run !== this.run) throw new AbortError('the walk of the interaction ended')
       // the move fails with it on its next tick (most callers don't wait for the interaction)
       log('interaction failed: %s', (err as Error)?.message ?? String(err))
       this.interactionError = err
       throw err
     } finally {
+      this.inFlight.delete(interaction)
       // a failed dig or place doesn't stay the current interaction: left set, the move neither tried it again nor
       // went on, and the bot stood there (a StraightDown over a block it never broke)
       if (this._cI === interaction) this._cI = undefined
     }
+    // (the start that waits on it goes no further)
+    if (run !== this.run) throw new AbortError('the walk of the interaction ended')
   }
 
   /** what the last interaction of the move failed with, until the move's next tick throws it */
