@@ -49,6 +49,9 @@ export interface SimOpts {
 
 export interface PostInitAlignOpts { handleBack?: boolean, lookAt?: Vec3, lookAtYaw?: Vec3, sprint?: boolean }
 
+/** blocks off a move's way across (past its exit, or to the side) that the bot is taken to have left it (MovementExecutor.ranPast) */
+export const RAN_PAST = 2
+
 export abstract class MovementExecutor extends Movement {
   /**
    * Physics engine, baby.
@@ -588,6 +591,29 @@ export abstract class MovementExecutor extends Movement {
       this.bot.entity.position.y === endMove.exitPos.y &&
       this.bot.entity.onGround
     )
+  }
+
+  /**
+   * Whether the bot has run off the move: RAN_PAST blocks or more from its way across (the line from its entry to its
+   * exit, xz), past its end or off to the side. The move never completed, and the keys it holds carry the bot on: a 26.3
+   * bot whose Forward move never aligned held forward and sprint 15 blocks past it, past the path's turn and off a
+   * 31-block cliff (full-26.3-fresh-o)
+   */
+  public ranPast (thisMove: Move): boolean {
+    const dir = thisMove.exitPos.minus(thisMove.entryPos)
+    dir.translate(0, -dir.y, 0)
+    const pos = this.bot.entity.position.minus(thisMove.entryPos)
+    pos.translate(0, -pos.y, 0)
+    const len2 = dir.dot(dir)
+    const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, pos.dot(dir) / len2))
+    return pos.minus(dir.scaled(t)).norm() > RAN_PAST
+  }
+
+  /** fails the move (a CancelError: goto searches again from where the bot is) once the bot ran past it (ranPast) */
+  protected throwIfRanPast (thisMove: Move): void {
+    if (!this.ranPast(thisMove)) return
+    this.bot.clearControlStates()
+    throw new CancelError(`MovementExecutor: ran off the move to ${thisMove.exitPos.toString()}, at ${this.bot.entity.position.toString()}`)
   }
 
   public isInitAligned (thisMove: Move, target: Vec3 = thisMove.entryPos, options: InitAlignOpts = {}): boolean {

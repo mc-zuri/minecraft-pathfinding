@@ -72,6 +72,8 @@ export class NewForwardExecutor extends MovementExecutor {
   }
 
   async landAlign (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
+    // (forward is held below without a look at the move: run on past it, the move is failed)
+    if (!this.isComplete(thisMove)) this.throwIfRanPast(thisMove)
     const faceForward = await this.faceForward()
 
     const opts: InitAlignOpts = { enterExitInterp: true }
@@ -202,6 +204,7 @@ export class NewForwardExecutor extends MovementExecutor {
     }
 
     const faceForward = await this.faceForward()
+    if (!this.isComplete(thisMove)) this.throwIfRanPast(thisMove)
 
     if (faceForward) {
       const jump = this.canJump(thisMove, currentIndex, path)
