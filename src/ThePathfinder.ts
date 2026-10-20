@@ -142,6 +142,13 @@ export class ThePathfinder {
   private wantedGoal?: goals.Goal
   public abortCalculation = false
 
+  /**
+   * The goto under way was called off (cancel): it searches no more, walks no more, and ends at once, without its
+   * goal's own end (onFinish). A reset's reason alone was cleared by the next search's start (getPathFromTo), and let
+   * go where no move ran (interrupt).
+   */
+  private gotoCancelled = false
+
   private currentGotoGoal?: goals.Goal
   private _currentProducer?: PathProducer
   private readonly executionRunner: PathExecutor
@@ -377,6 +384,7 @@ export class ThePathfinder {
 
   async cancel (): Promise<void> {
     log('User cancelled pathfinding.')
+    if (this.isPathing) this.gotoCancelled = true
     await this.interrupt(this.defaultMoveSettings.movementTimeoutMs, true, 'goalReassignment')
   }
 
@@ -385,9 +393,13 @@ export class ThePathfinder {
     if (this._currentProducer == null) return log('Interrupt ignored: no producer')
     this.abortCalculation = cancelCalculation
 
+    // the walk ends on its next tick (PathExecutor.perform) with a move running or not: between two moves, and in the
+    // walk's arrive after its last, there is none, and the reset was let go
+    if (this.isPathing && reasonStr != null) this.executionRunner.setResetReason(reasonStr)
+
     const currentExecutor = this.currentExecutor
     const currentMove = this.currentMove
-    if (currentExecutor == null) return log('Interrupt ignored: no executor')
+    if (currentExecutor == null) return log('Interrupt: no executor')
     if (currentMove == null) throw new Error('No current move, but there is a current executor.')
 
     const reason = reasonStr ? ResetError.fromReason(reasonStr) : undefined
@@ -750,6 +762,7 @@ export class ThePathfinder {
     do {
       let madeIt = false
       do {
+        if (this.gotoCancelled) return
         setupWait()
 
         let task: Promise<void> | null = null
@@ -758,6 +771,11 @@ export class ThePathfinder {
         let walked = 0
 
         for await (const res of this.getPathTo(goal)) {
+          // called off: the walk under way (a partial path's) ends on its next tick, and goto with it
+          if (this.gotoCancelled) {
+            if (task !== null) await (task as Promise<void>).catch(() => {})
+            return
+          }
           if (res.result.status === 'timeout' && res.result.path.length > 0) {
             // the search ran out of time (searchTimeoutMs): the way to the best node it got to, then a new search from
             // there, as long as each gets nearer the goal
@@ -856,7 +874,7 @@ export class ThePathfinder {
             manualCleanup()
           }
         }
-      } while (this.resetReason !== 'goalReassignment' && !madeIt)
+      } while (this.resetReason !== 'goalReassignment' && !madeIt && !this.gotoCancelled)
 
       await this.cleanupBot()
       if (doForever) {
@@ -864,7 +882,7 @@ export class ThePathfinder {
           await toWaitOn
         }
       }
-    } while (doForever && this.resetReason !== 'goalReassignment')
+    } while (doForever && this.resetReason !== 'goalReassignment' && !this.gotoCancelled)
   }
 
   private noteSearchEnd (status: string): void {
@@ -897,7 +915,7 @@ export class ThePathfinder {
     }
     // the search starts where the bot stands: on the ground (or in water), not on the way down from a missed jump
     this.bot.clearControlStates()
-    for (let i = 0; i < 60 && !this.bot.entity.onGround && (this.bot.entity as any).isInWater !== true; i++) {
+    for (let i = 0; i < 60 && !this.gotoCancelled && !this.bot.entity.onGround && (this.bot.entity as any).isInWater !== true; i++) {
       await this.bot.waitForTicks(1)
     }
   }
@@ -923,6 +941,8 @@ export class ThePathfinder {
       exec ??= executor
       executor.reset()
     }
+    // (and the search's idle one, none of them: a cancel during a search waited on its abort for good)
+    this.currentExecutor?.reset()
 
     if (forceSafety && exec != null) {
       let normVel
@@ -952,6 +972,7 @@ export class ThePathfinder {
     delete this.currentPath
     delete this.currentExecutor
     delete this.currentMove
+    this.gotoCancelled = false
   }
 
   /**
@@ -976,19 +997,22 @@ export class ThePathfinder {
       goal.cleanup?.()
     }
 
-    await this.cleanupBot(true)
+    // A goto called off ends at once: the keys let go, with no wait for the bot to come to rest (whoever called it off
+    // has the bot now) and none of the goal's own end (a GoalMineBlock's dig from where the walk was cut short)
+    const cancelled = this.gotoCancelled
+    await this.cleanupBot(!cancelled)
 
     // the goal's own end (GoalMineBlock digs its block, GoalPlaceBlock places) only where the goal holds: a goto ends
     // too when its search does (no path, a timeout no nearer, cancelled), the walk of a partial path wherever it got
     // to, and a dig from there (6 blocks off, 60 over a diamond) is one the server refuses. A walk that got there has
     // no current executor (each finished move unsets it): any of the movements' does, onFinish takes only its bot
-    if (goal != null && this.goalHolds(goal)) {
+    if (!cancelled && goal != null && this.goalHolds(goal)) {
       const exec = executor ?? this.activeMappings.movements.values().next().value
       if (exec != null) await goal.onFinish(exec)
     }
     this.world.cleanup?.()
 
-    if ((this.resetReason === 'goalReassignment')) {
+    if (cancelled || this.resetReason === 'goalReassignment') {
       log('Cleanup: Goal aborted.')
       this.bot.emit('goalAborted', goal)
     } else {

@@ -561,6 +561,8 @@ export class PathExecutor {
               `align ${move.moveType.constructor.name}`,
               async () => await executor.align(move, tickCount, goal)
             )
+            // (a walk ended while the tick went on: its stages are no longer this tick's)
+            if (settled) return
             tickCount++
 
             if (aligned) {
@@ -604,6 +606,7 @@ export class PathExecutor {
               `performPerTick ${move.moveType.constructor.name}`,
               async () => await executor._performPerTick(move, tickCount, currentIndex, localPath)
             )
+            if (settled) return
             tickCount++
 
             if (adding) {
@@ -672,6 +675,19 @@ export class PathExecutor {
 
     const moveListener = (): void => {
       if (settled || recoveryInFlight) return
+      // A reset or a cancel (interrupt: its reason set) ends the walk at the next tick, whatever stage it's at, as a
+      // player lets go of the keys at once. Checked only in align and perform, a cancel went unheard through a move's
+      // start (a ForwardJump's digs, a dig by hand 150 ticks), a tick still under way and the walk's arrive: a 26.3
+      // bot's goto went on 100 ticks past the drowning reflex's cancel (full-26.3-fresh-z, 'left behind').
+      const resetReason = this.getResetReason()
+      if (resetReason != null) {
+        tickInFlight = undefined
+        pendingInit = undefined
+        void handleExecutionError(new ResetError(resetReason)).catch((err) => {
+          void fail(err)
+        })
+        return
+      }
       if (tickInFlight != null) {
         if (!this.runSync(tickInFlight)) {
           // a tick that never ends (an await nothing answers) fails the walk, in the game's ticks
