@@ -9,6 +9,8 @@ import { ParkourDiagonal } from '../src/mineflayer-specific/movements/movementPr
 import { JumpSim } from '../src/mineflayer-specific/movements/simulators/jumpSim'
 import { stateLookAt } from '../src/mineflayer-specific/movements/movementUtils'
 import { createCacheWorld } from './setup'
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const conv = require('mineflayer/lib/conversions')
 
 function withTimeout<T> (promise: Promise<T>, ms: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
@@ -81,6 +83,48 @@ test('a ParkourDiagonal down over a one-deep hole, the bot facing the step behin
     assert.equal(Math.floor(at.x), 2, `at ${at}`)
     assert.equal(Math.floor(at.z), -2, `at ${at}`)
     assert.ok(ticks < 40, `${ticks} ticks`)
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})
+
+// The keys of a parkour jump are worked out against its locked yaw, which was written to bot.entity.yaw: mineflayer
+// sent it as the look while the bot moved by the float degrees of its look (yawDegrees), a move off the look the
+// server was told (Grim's Simulation), and a turn of 330 degrees once the radians wrapped (AimModulo360)
+test('the locked yaw of a ParkourDiagonal steers the keys and is never written as a look the bot does not hold', async () => {
+  const rig = createCacheWorld('1.20.4', 65, new Vec3(0.5, 66, 0.5)).rig
+  rig.bot.loadPlugin(createPlugin())
+  const world = (rig.bot as any).world
+  const entity: any = rig.bot.entity
+  let yaw = entity.yaw
+  const stray: number[] = []
+  Object.defineProperty(entity, 'yaw', {
+    get: () => yaw,
+    set: (v: number) => {
+      // a look the bot holds: the radians of its float degrees (mineflayer's setAngleDegrees)
+      if (entity.yawDegrees != null && v !== yaw && conv.fromNotchianYaw(entity.yawDegrees) !== v) stray.push(v)
+      yaw = v
+    },
+    configurable: true,
+    enumerable: true
+  })
+  try {
+    for (let x = -3; x <= 3; x++) {
+      world.setBlock(new Vec3(x, 65, 0), 'stone')
+      world.setBlock(new Vec3(x, 65, 1), 'stone')
+      world.setBlock(new Vec3(x, 66, 1), 'stone')
+    }
+    rig.bot.entity.position = new Vec3(0.495, 66, 0.206)
+    rig.bot.entity.velocity = new Vec3(-0.0043, -0.0784, -0.0189)
+    rig.bot.entity.onGround = true
+    void rig.bot.look(3.121, 0, true)
+    rig.bot.clearControlStates()
+    const { failed } = await runMove(rig, ParkourDiagonal, new Vec3(0.5, 66, 0.5), new Vec3(2.5, 65, -1.5), 13.244)
+    const at = rig.bot.entity.position
+    assert.deepEqual(failed, [])
+    assert.equal(Math.floor(at.x), 2, `at ${at}`)
+    assert.equal(Math.floor(at.z), -2, `at ${at}`)
+    assert.deepEqual(stray, [])
   } finally {
     rig.stopPassivePhysics()
   }

@@ -181,12 +181,13 @@ export function strafeMovement (ctx: IEntityState, nextPoint: Vec3, strict = fal
  * @returns
  */
 // currentPoint,
-export function botStrafeMovement (bot: Bot, nextPoint: Vec3, strict = false, minDist = 0.1): void {
+// (yaw: the yaw the keys are worked out against, the bot's look unless given)
+export function botStrafeMovement (bot: Bot, nextPoint: Vec3, strict = false, minDist = 0.1, yaw = bot.entity.yaw): void {
   applyStrafeMovement(
     {
       pos: bot.entity.position,
       vel: bot.entity.velocity,
-      yaw: bot.entity.yaw,
+      yaw,
       onGround: bot.entity.onGround
     },
     nextPoint,
@@ -252,11 +253,12 @@ export function smartMovement (ctx: IEntityState, nextPoint: Vec3, sprint = true
  * @returns
  */
 // currentPoint,
-export function botSmartMovement (bot: Bot, nextPoint: Vec3, sprint: boolean, minDist = 0.1): void {
+// (yaw: the yaw the keys are worked out against, the bot's look unless given)
+export function botSmartMovement (bot: Bot, nextPoint: Vec3, sprint: boolean, minDist = 0.1, yaw = bot.entity.yaw): void {
   const stateLike = {
     pos: bot.entity.position,
     vel: bot.entity.velocity,
-    yaw: bot.entity.yaw,
+    yaw,
     pitch: bot.entity.pitch,
     onGround: bot.entity.onGround,
     control: { set: (name: string, value: boolean) => bot.setControlState(name as any, value) }

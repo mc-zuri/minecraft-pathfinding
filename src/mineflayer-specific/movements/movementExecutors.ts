@@ -916,20 +916,21 @@ export class ParkourForwardExecutor extends MovementExecutor {
     this.lockedYaw = null
   }
 
-  private _applyLockedYaw (): void {
-    if (this.lockedYaw != null) {
-      // the yaw the keys are worked out against (botSmartMovement, botStrafeMovement), not the bot's look: the jump's
-      // look is _queueLookAtSync's, and the physics moves the bot by it (its yawDegrees). Turning the look to the
-      // locked yaw too (bot.look) made the jumps worse on a play run (1.21.11, seeds 5 and 7: 24 parkour moves failed,
-      // 7 without), the bot backing up into the block behind its run-up
-      this.bot.entity.yaw = this.lockedYaw
-    }
+  // the yaw the keys are worked out against (botSmartMovement, botStrafeMovement), not the bot's look: the jump's
+  // look is _queueLookAtSync's, and the physics moves the bot by it (its yawDegrees). Turning the look to the
+  // locked yaw too (bot.look) made the jumps worse on a play run (1.21.11, seeds 5 and 7: 24 parkour moves failed,
+  // 7 without), the bot backing up into the block behind its run-up. It is given to the controls, not written to
+  // bot.entity.yaw: mineflayer sent that yaw as the look while the bot moved by its yawDegrees, a move off the look
+  // it sent (Grim's Simulation, ~0.005 a tick and growing), and a turn of more than 320 degrees once the radians
+  // wrapped (AimModulo360)
+  private _keysYaw (): number {
+    return this.lockedYaw ?? this.bot.entity.yaw
   }
 
   private _applySmartControls (target: Vec3, jump: boolean): void {
-    this._applyLockedYaw()
-    botSmartMovement(this.bot, target, true)
-    botStrafeMovement(this.bot, target, true)
+    const yaw = this._keysYaw()
+    botSmartMovement(this.bot, target, true, 0.1, yaw)
+    botStrafeMovement(this.bot, target, true, 0.1, yaw)
     this.bot.setControlState('jump', jump)
     this.bot.setControlState('sneak', false)
   }
