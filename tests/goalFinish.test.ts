@@ -59,3 +59,45 @@ test('goto to a GoalMineBlock that holds where it ends runs the goal\'s dig (onF
     rig.stopPassivePhysics()
   }
 })
+
+for (const [what, now] of [['broken (air)', 'air'], ['changed to another block', 'dirt']] as const) {
+  test(`a GoalMineBlock whose block was ${what} since it was made isn't dug at its end: its goto returns (mineflayer's dig of a place that's air never ended, and the cleanup waited on it)`, async () => {
+    const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+    rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { partialPathProducer: false, partialPathLength: 50 }, moveSettings: { canDig: false } } as any))
+    rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+    const world = (rig.bot as any).world
+    try {
+      world.setBlock(new Vec3(10, 64, 0), 'stone')
+      const goal = goals.GoalMineBlock.fromBlock(rig.bot.pathfinder.world as any, rig.bot.blockAt(new Vec3(10, 64, 0)) as any, 4, 1.62)
+      const dug: string[] = []
+      const bot = rig.bot as any
+      bot.dig = async (block: any) => { dug.push(block.name); await new Promise(() => {}) }
+      // dug by something else after the goal was made (its Block kept)
+      world.setBlock(new Vec3(10, 64, 0), now)
+      await withTimeout(rig.bot.pathfinder.goto(goal), 30000, `goto went on for good (at ${rig.bot.entity.position})`)
+      assert.ok(rig.bot.pathfinder.goalHolds(goal), `the goal doesn't hold at ${rig.bot.entity.position}`)
+      assert.deepEqual(dug, [])
+      assert.equal(rig.bot.pathfinder.isPathing, false)
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  })
+}
+
+test('a GoalMineBlock whose block is still there is dug at its end, the block the world has now', async () => {
+  const rig = createCacheWorld('1.20.4', 64, new Vec3(0, 64, 0)).rig
+  rig.bot.loadPlugin(createPlugin({ pathfinderSettings: { partialPathProducer: false, partialPathLength: 50 }, moveSettings: { canDig: false } } as any))
+  rig.bot.entity.position = new Vec3(0.5, 64, 0.5)
+  const world = (rig.bot as any).world
+  try {
+    world.setBlock(new Vec3(10, 64, 0), 'stone')
+    const goal = goals.GoalMineBlock.fromBlock(rig.bot.pathfinder.world as any, rig.bot.blockAt(new Vec3(10, 64, 0)) as any, 4, 1.62)
+    const dug: string[] = []
+    const bot = rig.bot as any
+    bot.dig = async (block: any) => { dug.push(`${block.name} ${block.position}`) }
+    await withTimeout(rig.bot.pathfinder.goto(goal), 30000, `goto went on for good (at ${rig.bot.entity.position})`)
+    assert.deepEqual(dug, ['stone (10, 64, 0)'])
+  } finally {
+    rig.stopPassivePhysics()
+  }
+})

@@ -482,12 +482,27 @@ export class GoalMineBlock extends GoalLookAt {
 
     // could technically use BreakHandler, but won't bother for now.
 
+    // the block as the world has it now: one broken since the goal was made (another dig got it first, a walk's dig
+    // on the way) or changed to another is not dug. mineflayer's dig of a place that's air never ended (no break of it
+    // to come), and the goto's cleanup waited on it, every goto after it with it
+    const gone = (): boolean => {
+      const now = bot.blockAt(this.block.position)
+      return now == null || now.type !== this.block.type
+    }
+    if (gone()) return
     const item = bot.pathingUtil.currentHarvestingTool(this.block)
     if (item != null) await bot.equip(item, 'hand')
     else await bot.unequip('hand')
     bot.updateHeldItem()
+    if (gone()) return
 
-    await bot.dig(this.block, 'ignore', 'raycast') // already looking, comply with anticheat.
+    const block = bot.blockAt(this.block.position) ?? this.block
+    try {
+      await bot.dig(block, 'ignore', 'raycast') // already looking, comply with anticheat.
+    } catch (err) {
+      // broken while it turned to it (mineflayer: 'nothing to dig: the block at … is air'): done
+      if (!gone()) throw err
+    }
   }
 }
 
