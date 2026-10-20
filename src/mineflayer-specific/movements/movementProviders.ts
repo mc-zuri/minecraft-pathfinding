@@ -268,6 +268,31 @@ export class ForwardJump extends MovementProvider {
 }
 
 abstract class DropDownProvider extends MovementProvider {
+  /**
+   * Whether a fall down the column at `dir` from `node` into water at `waterY` passes a ledge a box off the column's
+   * middle comes down on short of the water: ground with room over it (a physical block, a walkthrough one on it) in
+   * any of the eight columns round the fall's, deeper than maxDropDown under the start and over the water. A box is
+   * 0.6 wide, and a fall's drift (the run off the edge, the executor's steering) takes it over a side column: a 26.3
+   * bot's drop of 42 into a cave's water landed on a ledge at y 29 and died (full-26.3-fresh-s). A shaft's walls, solid
+   * all the way down, are none.
+   */
+  protected ledgeBesideFall (node: Move, dir: Vec3, waterY: number): boolean {
+    // the highest block whose top is a fall of more than maxDropDown
+    const top = node.y - this.settings.maxDropDown - 2
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        if (dx === 0 && dz === 0) continue
+        let above = this.getBlockInfo(node, dir.x + dx, top + 1 - node.y, dir.z + dz)
+        for (let y = top; y >= waterY; y--) {
+          const block = this.getBlockInfo(node, dir.x + dx, y - node.y, dir.z + dz)
+          if (block.physical && above.walkthrough && !above.liquid) return true
+          above = block
+        }
+      }
+    }
+    return false
+  }
+
   getLandingBlock (orgBlock: BlockInfo, node: Move, dir: Vec3 = emptyVec): BlockInfo | null {
     // const chunk = this.bot.world.getColumn(node.x >> 4, node.z >> 4) as unknown as PCChunk;
 
@@ -295,6 +320,8 @@ abstract class DropDownProvider extends MovementProvider {
 
     while (blockLand.position.y >= min) {
       if (blockLand.liquid && blockLand.walkthrough) {
+        // a fall into water past maxDropDown: the water is the landing only for a box that falls clear of ground
+        if (node.y - blockLand.position.y > this.settings.maxDropDown && this.ledgeBesideFall(node, dir, blockLand.position.y)) return null
         return blockLand
       }
       if (blockLand.physical) {
@@ -350,8 +377,9 @@ export class ForwardDropDown extends DropDownProvider {
 
     // if (!this.settings.infiniteLiquidDropdownDistance && node.y - blockLand.position.y > this.settings.maxDropDown) return; // Don't drop down into water
 
-    const blockCheck0 = this.getBlockInfo(blockLand.position, dir.x, 1, dir.z)
-    const blockCheck1 = this.getBlockInfo(blockLand.position, dir.x, 2, dir.z)
+    // the landing's head room, in the landing's own column (the fall's: the dir is in blockLand's position already)
+    const blockCheck0 = this.getBlockInfo(blockLand.position, 0, 1, 0)
+    const blockCheck1 = this.getBlockInfo(blockLand.position, 0, 2, 0)
 
     if ((cost += this.safeOrBreak(blockCheck0, toBreak)) > COST_INF) return
     if ((cost += this.safeOrBreak(blockCheck1, toBreak)) > COST_INF) return
