@@ -74,6 +74,39 @@ for (const version of ['26.3', '1.21.11', '1.20.4']) {
     }
   })
 
+  test(`${version}: a tool got after the path was planned is the one a dig holds, not the bare hand`, async () => {
+    const rig = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5)).rig
+    rig.bot.loadPlugin(createPlugin())
+    const bot: any = rig.bot
+    const pos = new Vec3(1, 64, 0)
+    bot.world.setBlock(pos, 'dirt')
+    bot.entity.position = new Vec3(0.5, 64, 0.5)
+    bot.entity.onGround = true
+    try {
+      // the plan's inventory: no tool, the dig cost by hand memoed
+      bot.pathingUtil.refresh()
+      bot.pathingUtil.digCost(bot.blockAt(pos))
+      // a shovel given since, held
+      const Item = require('prismarine-item')(version)
+      const shovel = new Item(rig.mcData.itemsByName.stone_shovel.id, 1)
+      shovel.slot = 36
+      bot.inventory.slots[36] = shovel
+      bot.updateHeldItem()
+      let digWith: string | undefined
+      const dig = bot.dig.bind(bot)
+      bot.dig = async (...args: any[]) => { digWith = bot.heldItem?.name; return await dig(...args) }
+      const handler = BreakHandler.fromVec(pos, 'solid')
+      const move: any = { entryPos: new Vec3(0.5, 64, 0.5), exitPos: new Vec3(1.5, 64, 0.5), toPlace: [], toBreak: [handler] }
+      const executor = new NewForwardExecutor(bot, bot.pathfinder.world, bot.pathfinder.defaultMoveSettings)
+      executor.loadMove(move)
+      await withTimeout(executor.performInteraction(handler), 8000, 'the break never ended')
+      assert.equal(digWith, 'stone_shovel')
+      assert.equal(bot.inventory.slots[36]?.name, 'stone_shovel', 'the shovel stays in the hotbar')
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  })
+
   test(`${version}: a dig's tool that is gone from the inventory gives way to the inventory's tools now`, async () => {
     const rig = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5)).rig
     rig.bot.loadPlugin(createPlugin())

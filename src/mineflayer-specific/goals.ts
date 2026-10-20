@@ -482,7 +482,7 @@ export class GoalMineBlock extends GoalLookAt {
 
     // could technically use BreakHandler, but won't bother for now.
 
-    const item = bot.pathingUtil.bestHarvestingTool(this.block)
+    const item = bot.pathingUtil.currentHarvestingTool(this.block)
     if (item != null) await bot.equip(item, 'hand')
     else await bot.unequip('hand')
     bot.updateHeldItem()

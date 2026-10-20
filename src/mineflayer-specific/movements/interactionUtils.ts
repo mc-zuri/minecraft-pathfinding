@@ -568,8 +568,8 @@ export class BreakHandler extends InteractHandler {
         return bot.inventory.items().find((item) => item.name === 'bucket') ?? null // empty bucket
       }
       case 'solid': {
-        // TODO: identify best tool for block.
-        return bot.pathingUtil.bestHarvestingTool(block)
+        // the best of the tools the inventory holds now (the search's memo is the inventory's at the path's start)
+        return bot.pathingUtil.currentHarvestingTool(block)
       }
       case 'replaceable': {
         throw new Error('Not implemented')

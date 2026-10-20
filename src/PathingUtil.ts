@@ -16,11 +16,44 @@ export class PathingUtil {
 
   public refresh (): void {
     this.items = this.bot.inventory.items()
-    this.tools = this.items.filter(
-      (item) => item.name.includes('pickaxe') || item.name.includes('axe') || item.name.includes('shovel') || item.name.includes('hoe') || item.name.includes('shears')
-    )
+    this.tools = PathingUtil.toolsOf(this.items)
     this.memoedDigSpeed = {}
     this.memoedBestTool = {}
+  }
+
+  private static toolsOf (items: Item[]): Item[] {
+    return items.filter(
+      (item) => item.name.includes('pickaxe') || item.name.includes('axe') || item.name.includes('shovel') || item.name.includes('hoe') || item.name.includes('shears')
+    )
+  }
+
+  /** the fastest of the tools at the block, and its dig time (the hand's when there's none) */
+  private fastestTool (block: Block, tools: Item[]): { tool: Item | null, digTime: number } {
+    const effects = this.bot.entity.effects
+    const creative = this.bot.game.gameMode === 'creative'
+    let fastest = Number.MAX_VALUE
+    let bestTool: Item | null = null
+    for (const tool of tools) {
+      const enchants = tool.nbt != null ? nbt.simplify(tool.nbt).Enchantments : []
+      const digTime = block.digTime(tool.type, creative, false, false, enchants, effects)
+      if (digTime < fastest) {
+        fastest = digTime
+        bestTool = tool
+      }
+    }
+    if (fastest === Number.MAX_VALUE) fastest = block.digTime(null, creative, false, false, [], effects)
+    return { tool: bestTool, digTime: fastest }
+  }
+
+  /**
+   * The best tool for the block among those the inventory holds now, as the item in its slot: the one a dig equips
+   * (mineflayer's equip takes it by its slot). The search's memo is the inventory's at the path's start: a tool got
+   * since (given, crafted, picked up) wasn't known, and a dig with none known unequipped the hand, the pickaxe held
+   * put in the bag, and dug stone by hand.
+   */
+  public currentHarvestingTool (block: Block): Item | null {
+    if (block == null) return null
+    return this.fastestTool(block, PathingUtil.toolsOf(this.bot.inventory.items())).tool
   }
 
   /**
@@ -43,28 +76,7 @@ export class PathingUtil {
       this.refresh()
     }
 
-    const availableTools = this.tools
-    const effects = this.bot.entity.effects
-
-    const creative = this.bot.game.gameMode === 'creative'
-
-    let fastest = Number.MAX_VALUE
-    let bestTool = null as unknown as Item
-
-    // if (creative === false)
-    for (const tool of availableTools) {
-      const enchants = tool.nbt != null ? nbt.simplify(tool.nbt).Enchantments : []
-      const digTime = block.digTime(tool.type, creative, false, false, enchants, effects)
-      if (digTime < fastest) {
-        fastest = digTime
-        bestTool = tool
-      }
-    }
-
-    // // default to no tools used in creative.
-    if (fastest === Number.MAX_VALUE) {
-      fastest = block.digTime(null, creative, false, false, [], effects)
-    }
+    const { tool: bestTool, digTime: fastest } = this.fastestTool(block, this.tools)
 
     this.memoedBestTool[block.type] = bestTool
     this.memoedDigSpeed[block.type] = fastest
