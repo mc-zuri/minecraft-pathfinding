@@ -245,11 +245,26 @@ export class PathExecutor {
     let stillTicks = 0
     // the ticks the current move has run with no dig or place under way
     let moveTicks = 0
+    // the edge guard's catches the current move has seen (EdgeGuard.catches)
+    let guardCatches = 0
     // A move that holds the bot in one place (a jump it never lines up for, a corner it presses into) fails after
     // NO_PROGRESS_TICKS, so that goto searches again without it; a dig or a place under way is progress.
     const checkProgress = (executor: MovementExecutor, move: Move): void => {
       const pos = bot.entity.position
       const interacting = executor.cI != null || (bot as any).targetDigBlock != null
+      // A move the edge guard held at a ledge last tick (its keys would have taken the bot off a drop deeper than it
+      // may fall, with no move planning it) fails: its executor ran the bot wrong (a run on past its end, a line
+      // across a ledge, a jump short), and goto searches again from the edge the bot is held at. A bridge's place or
+      // a dig under way is waited on, the bot held.
+      const guard = this.host.edgeGuard
+      if (guard.catches !== guardCatches) {
+        guardCatches = guard.catches
+        const fall = guard.lastCatch?.fall
+        if (!interacting && fall != null) {
+          const depth = Number.isFinite(fall.depth) ? `a ${fall.depth.toFixed(1)}-block drop` : 'the void'
+          throw new CancelError(`edge guard: the bot's keys would have taken it off ${depth}${fall.lava ? ' into lava' : ''} at ${fall.from.toString()} (${fall.allowed} allowed)`)
+        }
+      }
       // a move that goes on and on (a jump it backs up for and walks up to again and again) fails too, after
       // MOVE_TICKS_FACTOR times its cost in ticks
       if (!interacting && ++moveTicks > Math.max(MIN_MOVE_TICKS, MOVE_TICKS_FACTOR * move.cost)) {
@@ -440,6 +455,8 @@ export class PathExecutor {
         progressPos = bot.entity.position.clone()
         stillTicks = 0
         moveTicks = 0
+        // (a catch before the move, between paths, is no failure of its)
+        guardCatches = this.host.edgeGuard.catches
 
         await this.timeAsync('prepare cleanup', async () => await this.host.cleanupBot())
         executor.loadMove(move)

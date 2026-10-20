@@ -7,6 +7,7 @@ import { Vec3 } from 'vec3'
 import { Move } from './mineflayer-specific/move'
 import { BlockInfo, CacheSyncWorld } from './mineflayer-specific/world/cacheWorld'
 import { PredictionCheck } from './diagnostics/predictionCheck'
+import { EdgeGuard } from './mineflayer-specific/edgeGuard'
 import { ResetError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveExecutor,
@@ -76,6 +77,11 @@ export interface PathfinderOptions {
    * round a goal it can't get to) kept a search going for good.
    */
   searchTimeoutMs?: number
+  /**
+   * The guard against a walk off a ledge (EdgeGuard): 'auto' (default) while goto walks, 'always' on every tick (a
+   * bot's own steering too), 'off'. Its allowed drop is maxDropDown, or the drop the current move plans.
+   */
+  edgeGuard?: 'off' | 'auto' | 'always'
 }
 
 const DEFAULT_PATHFINDER_OPTS: PathfinderOptions = {
@@ -83,7 +89,8 @@ const DEFAULT_PATHFINDER_OPTS: PathfinderOptions = {
   partialPathLength: 50,
   moveTickBudgetMs: 0,
   searchTickBudgetMs: 40,
-  searchTimeoutMs: 5000
+  searchTimeoutMs: 5000,
+  edgeGuard: 'auto'
 }
 
 const EMPTY_VEC = new Vec3(0, 0, 0)
@@ -144,6 +151,12 @@ export class ThePathfinder {
    * physics' prediction on the pathfinder's world, with the last ticks' samples and events for a stuck report
    */
   public readonly diagnostics: PredictionCheck
+
+  /**
+   * The last line against a walk off a ledge (mineflayer-specific/edgeGuard): the bot sneaks wherever its keys would
+   * take it over a drop deeper than maxDropDown that no move plans; a move it catches fails (goto searches again)
+   */
+  public readonly edgeGuard: EdgeGuard
 
   /** how the last search that found no way ended ('noPath', 'timeout', 'canceled'), at which of the check's ticks */
   public lastSearch?: { status: string, tick: number }
@@ -266,6 +279,12 @@ export class ThePathfinder {
       }
     })
 
+    this.edgeGuard = new EdgeGuard(bot, {
+      active: () => this.isPathing,
+      allowedDrop: () => this.allowedDrop()
+    })
+    this.edgeGuard.mode = pathfinderSettings.edgeGuard ?? 'auto'
+
     this.setupListeners()
     log('Pathfinder initialized.')
   }
@@ -326,6 +345,26 @@ export class ThePathfinder {
 
   setOptions (settings: Partial<PathfinderOptions>): void {
     this.pathfinderSettings = Object.assign({}, DEFAULT_PATHFINDER_OPTS, settings)
+    if (settings.edgeGuard != null) this.edgeGuard.mode = settings.edgeGuard
+  }
+
+  /**
+   * The most the bot may drop now (the edge guard's): maxDropDown, or the drop down to the exit of the current move,
+   * or of the move after it, where one plans to go down onto ground (a path planned before the drop allowed was cut).
+   * A drop into water needs none (the guard lets a landing in water be); one onto a ledge on the way down is a fall.
+   */
+  allowedDrop (): number {
+    let allowed = this.defaultMoveSettings.maxDropDown
+    if (!this.isPathing) return allowed
+    const feet = this.bot.entity.position.y
+    const path = this.currentPath
+    const index = this.currentIndex
+    for (const move of [this.currentMove, path?.[index], path?.[index + 1]]) {
+      if (move == null || move.exitPos.y >= move.entryPos.y) continue
+      if (this.bot.blockAt(move.exitPos, false)?.name === 'water') continue
+      allowed = Math.max(allowed, feet - move.exitPos.y)
+    }
+    return allowed
   }
 
   dropMovment (provider: BuildableMoveProvider): void {

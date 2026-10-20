@@ -17,6 +17,7 @@ import type { MovementOptions, MovementSetup } from './mineflayer-specific/movem
 import { MovementProvider } from './mineflayer-specific/movements'
 import type { OptimizationSetup } from './mineflayer-specific/post'
 import type { MoveInfo } from './diagnostics/pathState'
+import type { EdgeFall } from './mineflayer-specific/edgeGuard'
 
 export function createPlugin (opts?: HandlerOpts) {
   return function (bot: Bot) {
@@ -46,6 +47,8 @@ declare module 'mineflayer' {
     goalFinished: (goal: goals.Goal) => void
     goalAborted: (goal: goals.Goal) => void
     pathfinderMoveFailed: (info: { move: MoveInfo | null, error: string, pos: Vec3 }) => void
+    /** the edge guard held the bot at a ledge its keys would have taken it off (EdgeGuard) */
+    edgeGuard: (fall: EdgeFall) => void
   }
 }
 
@@ -71,3 +74,6 @@ export * as movementProviders from './mineflayer-specific/movements/movementProv
 export * as diagnostics from './diagnostics'
 export { PredictionCheck, classifyMismatch } from './diagnostics/predictionCheck'
 export type { MismatchClass, TickSample, DiagEvent, Mismatch } from './diagnostics/predictionCheck'
+
+export { EdgeGuard, predictEdgeFall, landingUnder, onFootOnGround } from './mineflayer-specific/edgeGuard'
+export type { EdgeFall, EdgeGuardOptions } from './mineflayer-specific/edgeGuard'
