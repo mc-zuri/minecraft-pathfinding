@@ -31,6 +31,8 @@ export interface EdgeGuardOptions {
   allowedDrop: () => number
   /** the world the physics runs on (default the bot's physics world) */
   world?: () => any
+  /** whether a walk's fall is followed with its keys held on too (predictEdgeFall's keysHeld; default always) */
+  keysHeld?: () => boolean
 }
 
 /** a drop this much over the allowed one is one (a float's rounding) */
@@ -139,13 +141,30 @@ function movesOnKeys (controls: ControlStateHandler): boolean {
  * past the allowed depth, the column under it looked down: water, a ladder or a web under a deep fall is no harm).
  * null when the bot stays on the ground, isn't on its feet on the ground now (onFootOnGround), or lands no deeper.
  */
-export function predictEdgeFall (bot: Bot, allowed: number, opts: { controls?: ControlStateHandler, world?: any, engine?: BotcraftPhysics } = {}): EdgeFall | null {
+export function predictEdgeFall (bot: Bot, allowed: number, opts: { controls?: ControlStateHandler, world?: any, engine?: BotcraftPhysics, keysHeld?: boolean } = {}): EdgeFall | null {
   if (!onFootOnGround(bot)) return null
   const controls = opts.controls ?? ControlStateHandler.COPY_BOT(bot)
   const e = bot.entity
   if (!movesOnKeys(controls) && Math.hypot(e.velocity.x, e.velocity.z) < STILL_SPEED) return null
-
   const engine = opts.engine ?? new BotcraftPhysics(bot.registry)
+  // A jump is followed with its keys held; a walk off the edge with the keys let go, and with `keysHeld` (default
+  // true) with them held on too (the steering that ran the bot off holds them: a chase's forward and sprint carry the
+  // fall on through the air), the worse of the two. Followed with the keys let go only, a sprint off a step of 2 down a
+  // slope was a fall onto the next step, while the keys held carried the bot two steps down, onto the brink of a
+  // sinkhole and into it: a 26.3 bot chasing a cow fell 49 blocks (f1-26.3, t8914). (A goto's moves steer the fall
+  // they plan, a drop onto a lane a block wide, and keysHeld is off for them: EdgeGuardOptions.keysHeld.)
+  if (controls.jump) return followEdgeFall(bot, allowed, controls, true, engine, opts.world)
+  const released = followEdgeFall(bot, allowed, controls, false, engine, opts.world)
+  if (opts.keysHeld === false || !movesOnKeys(controls)) return released
+  const held = followEdgeFall(bot, allowed, controls, true, engine, opts.world)
+  if (released == null) return held
+  if (held == null) return released
+  return held.lava || (!released.lava && held.depth > released.depth) ? held : released
+}
+
+/** predictEdgeFall's fall, from the bot's next tick on its `controls`, followed with them held on or let go */
+function followEdgeFall (bot: Bot, allowed: number, controls: ControlStateHandler, holdKeys: boolean, engine: BotcraftPhysics, worldOpt?: any): EdgeFall | null {
+  const e = bot.entity
   const ctx = EPhysicsCtx.FROM_BOT(engine, bot, (bot as any).physicsSettings)
   const overrides = (bot as any).physicsSettings?.overrides
   if (overrides != null) Object.assign(ctx, overrides)
@@ -156,7 +175,7 @@ export function predictEdgeFall (bot: Bot, allowed: number, opts: { controls?: C
   const prev = (e as { prevControl?: ControlStateHandler }).prevControl
   if (prev != null && typeof prev.clone === 'function') state.prevControl = prev.clone()
 
-  const world = opts.world ?? (bot as any).physicsWorld ?? { getBlock: (pos: Vec3) => bot.blockAt(pos, false) }
+  const world = worldOpt ?? (bot as any).physicsWorld ?? { getBlock: (pos: Vec3) => bot.blockAt(pos, false) }
   const from = e.position.clone()
   const jump = controls.jump
 
@@ -166,9 +185,8 @@ export function predictEdgeFall (bot: Bot, allowed: number, opts: { controls?: C
   // (as Player.maybeBackOffFromEdge has it, the box moved down by maxUpStep free of the world)
   if (state.onGround && !overEdge(engine, world, state)) return null
   const over = state.pos.clone()
-  // only the first tick's keys are this tick's: the rest of a jump is followed with the keys held, a walk's fall with
-  // none (the air gives a key little hold)
-  if (!jump) state.control = ControlStateHandler.DEFAULT()
+  // only the first tick's keys are this tick's: the rest is followed with them held or with none (holdKeys)
+  if (!holdKeys) state.control = ControlStateHandler.DEFAULT()
   if (state.onGround) engine.simulate(ctx, world)
 
   let depth: number | null = null
@@ -182,7 +200,9 @@ export function predictEdgeFall (bot: Bot, allowed: number, opts: { controls?: C
       lava = true
       break
     }
-    if (state.onGround) {
+    // a landing with the box over no ground within the step height (the brink of a block it came down on, moving on
+    // past it) is none: the fall goes on (on the ground there, a sneak holds nothing, the box over the drop already)
+    if (state.onGround && !overEdge(engine, world, state)) {
       depth = from.y - state.pos.y
       break
     }
@@ -336,7 +356,7 @@ export class EdgeGuard {
 
   /** the fall the bot's keys would start now (predictEdgeFall at the allowed drop), with no change to the keys */
   public predict (controls?: ControlStateHandler): EdgeFall | null {
-    return predictEdgeFall(this.bot, this.opts.allowedDrop(), { controls, world: this.opts.world?.(), engine: this.engine })
+    return predictEdgeFall(this.bot, this.opts.allowedDrop(), { controls, world: this.opts.world?.(), engine: this.engine, keysHeld: this.opts.keysHeld?.() ?? true })
   }
 
   private onTick (): void {

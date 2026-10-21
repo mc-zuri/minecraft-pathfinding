@@ -288,7 +288,9 @@ export class ThePathfinder {
 
     this.edgeGuard = new EdgeGuard(bot, {
       active: () => this.isPathing,
-      allowedDrop: () => this.allowedDrop()
+      allowedDrop: () => this.allowedDrop(),
+      // (the walk's own steering outside goto: a skill's chase holds its keys on through the fall)
+      keysHeld: () => !this.isPathing
     })
     this.edgeGuard.mode = pathfinderSettings.edgeGuard ?? 'auto'
 
