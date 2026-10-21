@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, @typescript-eslint/strict-boolean-expressions */
 import { Bot, BotEvents } from 'mineflayer'
-import { blockReach, digInSight, useInSight } from '../crosshairDig'
+import { blockReach, digInSight, PREDICTION_ANSWER_TICKS, useInSight } from '../crosshairDig'
 import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
@@ -22,8 +22,7 @@ const debug = require('debug')
 
 /** ticks a dig's promise gets to answer once its block is gone */
 const DIG_ANSWER_TICKS = 20
-/** ticks a break the client predicted waits at most for the server's acknowledgement (5 s: a lost one isn't waited on for good) */
-export const PREDICTION_ANSWER_TICKS = 100
+export { PREDICTION_ANSWER_TICKS }
 const logBase = debug('minecraft-pathfinding:InteractHandler')
 const logPlace = debug('minecraft-pathfinding:PlaceHandler')
 const logBreak = debug('minecraft-pathfinding:BreakHandler')
@@ -727,7 +726,8 @@ export class BreakHandler extends InteractHandler {
             // an abort ends it (abort: the signal), not only the dig under way (a dig stopped by stopDigging alone
             // was taken for the crosshair gone off the block, and digInSight dug on, mineflayer's plain dig)
             this.digStop = new AbortController()
-            this._breakTask = digInSight(bot, block, { signal: this.digStop.signal })
+            // (the server's answer to the break told here, staysGone: a refused one dug again)
+            this._breakTask = digInSight(bot, block, { signal: this.digStop.signal, answer: false })
             // a dig that fails (aborted, out of reach) ends the wait with its error
             await Promise.race([settled, this._breakTask])
             logBreak('Dig task resolved. Now waiting for world update.')

@@ -66,7 +66,7 @@ export { MovementOptimizer } from './mineflayer-specific/post'
 export type { BuildableMoveOptimizer, OptimizationSetup, OptimizationMap } from './mineflayer-specific/post'
 export { Move } from './mineflayer-specific/move'
 export { DEFAULT_SCAFFOLDING_BLOCKS, scaffoldCount, scaffoldItem } from './mineflayer-specific/movements/scaffolding'
-export { digInSight, aimAt, crosshairBlock, blockReach, useInSight } from './mineflayer-specific/crosshairDig'
+export { digInSight, aimAt, crosshairBlock, blockReach, useInSight, DigRefusedError, PREDICTION_ANSWER_TICKS } from './mineflayer-specific/crosshairDig'
 export type { DigInSightOptions, UseInSightOptions, CrosshairHit, AimResult } from './mineflayer-specific/crosshairDig'
 
 export * as movementProviders from './mineflayer-specific/movements/movementProviders'

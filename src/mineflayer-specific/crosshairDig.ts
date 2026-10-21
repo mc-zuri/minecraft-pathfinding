@@ -5,6 +5,22 @@
 import type { Bot } from 'mineflayer'
 import type { Block } from 'prismarine-block'
 import { Vec3 } from 'vec3'
+import { DEFAULT_SETTLE_TICKS } from '../customBlockEvents'
+
+/** ticks a break the client predicted waits at most for the server's acknowledgement (5 s: a lost one isn't waited on for good) */
+export const PREDICTION_ANSWER_TICKS = 100
+
+/**
+ * A dig the server refused: its break, the client's prediction (MultiPlayerGameMode.destroyBlock), put back by the
+ * server's answer (BlockStatePredictionHandler.endPredictionsUpTo), or the block still there after it (spawn
+ * protection, a claim, adventure mode)
+ */
+export class DigRefusedError extends Error {
+  constructor (readonly blockName: string, readonly position: Vec3) {
+    super(`the dig of the ${blockName} at ${position.toString()} was refused: the block is back after the server's answer`)
+    this.name = 'DigRefusedError'
+  }
+}
 
 /** the block reach: the block_interaction_range attribute from 1.20.5, else 4.5 (5 in creative) */
 export function blockReach (bot: Bot): number {
@@ -104,6 +120,11 @@ export interface DigInSightOptions {
   maxObstructions?: number
   /** dig with mineflayer-mouse's left click when it is loaded (default true) */
   useMouse?: boolean
+  /**
+   * wait for the server's answer to the break and fail with DigRefusedError when it puts the block back (default
+   * true); false: the caller tells a refused break itself (BreakHandler.staysGone digs it again)
+   */
+  answer?: boolean
 }
 
 function broken (bot: Bot, pos: Vec3, type: number): boolean {
@@ -119,10 +140,31 @@ function canBreak (bot: Bot, block: Block): boolean {
 }
 
 /**
+ * After a dig's break, whether the server kept it: while the block is the client's prediction (mineflayer's
+ * _isBlockPredicted, from 1.19 BlockStatePredictionHandler's serverVerifiedStates) the server's answer is waited for,
+ * PREDICTION_ANSWER_TICKS at most; with no predictions to tell (before 1.19), the settle's ticks. False as soon as the
+ * block is there (put back, or never broken).
+ */
+async function serverKeptBreak (bot: Bot, pos: Vec3, type: number, signal?: AbortSignal): Promise<boolean> {
+  const predicted = (bot as any)._isBlockPredicted as ((pos: Vec3) => boolean) | undefined
+  const ticks = typeof predicted === 'function' ? PREDICTION_ANSWER_TICKS : DEFAULT_SETTLE_TICKS
+  for (let tick = 0; tick < ticks; tick++) {
+    if (typeof predicted === 'function' && !predicted(pos)) break
+    if (!broken(bot, pos, type)) return false
+    if (signal?.aborted === true) throw signal.reason ?? new Error('aborted')
+    await bot.waitForTicks(1)
+  }
+  return broken(bot, pos, type)
+}
+
+/**
  * Digs the block through the crosshair: the bot looks at a point of it in sight and digs it at the face the ray hits,
  * and stops when the crosshair goes off it (a block fell or grew into the way, the bot was turned). When none of it is
  * in sight, the block in the way is broken first, as a player breaks the leaves before the log; with nothing in the way
- * (out of reach) the dig is mineflayer's plain one. Resolves when the block is gone.
+ * (out of reach) the dig is mineflayer's plain one. Resolves when the block is gone and the server kept the break
+ * (`answer`: serverKeptBreak); a break it put back fails with DigRefusedError, the block's or one in the way's. A
+ * refused dig resolved as done: mineflayer's dig ends on the client's predicted break (diggingCompleted), and a log
+ * under spawn protection was 'dug', back with the server's answer, and its caller went on as if it were gone.
  */
 export async function digInSight (bot: Bot, block: Block, options: DigInSightOptions = {}): Promise<void> {
   // (a bot with no view to aim: mineflayer's dig)
@@ -133,6 +175,11 @@ export async function digInSight (bot: Bot, block: Block, options: DigInSightOpt
   const digObstruction = options.digObstruction ?? ((b: Block) => canBreak(bot, b))
   let obstructions = options.maxObstructions ?? 4
   const mouse = options.useMouse !== false && typeof (bot as any).leftClickStart === 'function' && (bot as any).mouse != null
+  // the break done: the server's answer to it (a refused one fails), unless the caller tells it itself
+  const kept = async (): Promise<void> => {
+    if (options.answer === false) return
+    if (!(await serverKeptBreak(bot, pos, type, options.signal))) throw new DigRefusedError(block.name, pos)
+  }
   for (let attempt = 0; attempt < 8; attempt++) {
     if (options.signal?.aborted === true) throw options.signal.reason ?? new Error('aborted')
     const target = bot.blockAt(pos)
@@ -157,10 +204,10 @@ export async function digInSight (bot: Bot, block: Block, options: DigInSightOpt
       } finally {
         options.signal?.removeEventListener('abort', onAbort)
       }
-      return
+      return await kept()
     }
     const done = mouse ? await mouseDig(bot, target, aim.point, reach, options.signal) : await crosshairDig(bot, target, aim.point, aim.face, reach, options.signal)
-    if (done || broken(bot, pos, type)) return
+    if (done || broken(bot, pos, type)) return await kept()
   }
   throw new Error(`no dig of the ${block.name} at ${pos.toString()} held the crosshair`)
 }
