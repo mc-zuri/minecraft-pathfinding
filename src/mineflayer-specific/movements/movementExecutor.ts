@@ -12,6 +12,7 @@ import { BaseSimulator, BotcraftPhysics, Controller, ControlStateHandler, EPhysi
 import { botStrafeMovement, botSmartMovement } from './controls'
 import { getUnderlyingBBs } from './movementUtils'
 import { getNormalizedPos, interpolateStepPoints, posToYawPitchFromEye } from '../../utils'
+import { eyeHeight } from '../crosshairDig'
 import { IPhysics } from '@nxg-org/mineflayer-physics-util/dist/physics/engines'
 import type { RayType } from '../../types'
 
@@ -837,14 +838,14 @@ export abstract class MovementExecutor extends Movement {
     const bl = this.bot.blockAtCursor(256) as unknown as RayType | null
     if (bl == null) return false
 
-    const eyePos = this.bot.entity.position.offset(0, 1.62, 0)
+    const eyePos = this.bot.entity.position.offset(0, eyeHeight(this.bot), 0)
     return bl.intersect.minus(eyePos).normalize().dot(vec3.minus(eyePos).normalize()) > 1 - limit
   }
 
   public isLookingAtYaw (vec3: Vec3, limit = 0.01): boolean {
     if (!this.settings.careAboutLookAlignment) return true
 
-    const eyePos = this.bot.entity.position.offset(0, 1.62, 0)
+    const eyePos = this.bot.entity.position.offset(0, eyeHeight(this.bot), 0)
     const targetDir = vec3.minus(eyePos).offset(0, -(vec3.minus(eyePos).y), 0)
 
     if (targetDir.norm() < 1e-8) return true
@@ -997,7 +998,7 @@ export abstract class MovementExecutor extends Movement {
     } else {
       await this.lookAtPathPos(target)
 
-      const yawPitch = posToYawPitchFromEye(this.bot.entity.position, 1.62, target)
+      const yawPitch = posToYawPitchFromEye(this.bot.entity.position, eyeHeight(this.bot), target)
       if (!this.isLookingAtYaw(target, 0.01)) {
         log(`postInitAlignToPath: failed yaw check (offset=${yawPitch.yaw - this.bot.entity.yaw})`)
       }

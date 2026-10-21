@@ -29,8 +29,16 @@ export function blockReach (bot: Bot): number {
   return bot.game?.gameMode === 'creative' ? 5 : 4.5
 }
 
+/**
+ * The eyes' height of the bot's pose now (Entity.getEyeHeight: 1.62 standing, 1.27 crouching from 1.14, 0.4 swimming),
+ * which mineflayer's physics sets each tick from its pose
+ */
+export function eyeHeight (bot: Bot): number {
+  return (bot.entity as any).eyeHeight ?? 1.62
+}
+
 function eyes (bot: Bot): Vec3 {
-  return bot.entity.position.offset(0, (bot.entity as any).eyeHeight ?? 1.62, 0)
+  return bot.entity.position.offset(0, eyeHeight(bot), 0)
 }
 
 export interface CrosshairHit {

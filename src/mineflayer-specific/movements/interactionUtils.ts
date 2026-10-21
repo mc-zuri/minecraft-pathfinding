@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars, @typescript-eslint/no-var-requires, @typescript-eslint/restrict-template-expressions, @typescript-eslint/strict-boolean-expressions */
 import { Bot, BotEvents } from 'mineflayer'
-import { blockReach, digInSight, PREDICTION_ANSWER_TICKS, useInSight } from '../crosshairDig'
+import { blockReach, digInSight, eyeHeight, PREDICTION_ANSWER_TICKS, useInSight } from '../crosshairDig'
 import { Vec3 } from 'vec3'
 
 import type { Item } from 'prismarine-item'
@@ -434,7 +434,7 @@ export class PlaceHandler extends InteractHandler {
         }
         if (waitTicks > 0) logPlace(`Waited ${waitTicks} ticks for valid raycast intersections.`)
 
-        const stateEyePos = bot.entity.position.offset(0, 1.62, 0)
+        const stateEyePos = bot.entity.position.offset(0, eyeHeight(bot), 0)
         const lookDir = bot.util.getViewDir()
         works.raycasts.sort((a, b) => b.intersect.minus(stateEyePos).dot(lookDir) - a.intersect.minus(stateEyePos).dot(lookDir))
 
@@ -456,7 +456,7 @@ export class PlaceHandler extends InteractHandler {
           const state = ectx.state
           bot.physicsUtil.engine.simulate(ectx, bot.world)
 
-          const sPos = state.pos.offset(0, 1.62, 0)
+          const sPos = state.pos.offset(0, state.eyeHeight, 0)
           const testCheck = (await bot.world.raycast(
             sPos,
             rayRes.intersect.minus(sPos).normalize().scale(0.5),
@@ -666,7 +666,9 @@ export class BreakHandler extends InteractHandler {
 
   async performInfo (bot: Bot, ticks = 15): Promise<InteractionPerformInfo> {
     const bb = AABB.fromBlock(this.vec)
-    const dist = bb.distanceToVec(bot.entity.position.offset(0, 1.62, 0))
+    // (from the eyes of the bot's pose: a crouching bot's are 0.35 lower, Entity.getEyePosition, which the server's reach
+    // is measured from, ServerPlayer.canInteractWithBlock)
+    const dist = bb.distanceToVec(bot.entity.position.offset(0, eyeHeight(bot), 0))
     // in the crosshair's reach (the block_interaction_range): digInSight aims at a point of the block within it, and the
     // bot holds still while it digs (MovementExecutor.digging); from further off it walks on (it started digs 9 blocks
     // off, which the server refuses past the reach)
@@ -874,7 +876,7 @@ export class OpenHandler extends BreakHandler {
   }
 
   async performInfo (bot: Bot, ticks = 15): Promise<InteractionPerformInfo> {
-    const eye = bot.entity.position.offset(0, (bot.entity as any).eyeHeight ?? 1.62, 0)
+    const eye = bot.entity.position.offset(0, eyeHeight(bot), 0)
     const reachable = AABB.fromBlock(this.vec).distanceToVec(eye) < blockReach(bot)
     return reachable
       ? { ticks: 0, tickAllowance: 0, shiftTick: 0, raycasts: [] }
