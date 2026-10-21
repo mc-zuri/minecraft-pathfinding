@@ -217,10 +217,20 @@ function digTicks (bot: Bot, block: Block): number {
   return Math.ceil((bot.digTime?.(block) ?? 0) / 50) + 100
 }
 
+/**
+ * The look kept on the dig's point as the bot moves under it, as a player holding the attack key keeps the crosshair on
+ * the block with the mouse: a swimmer bobbing at the surface (its jump held, LivingEntity.jumpInLiquid) moved the
+ * crosshair off the block with a look left as it was, and each dig started again from nothing
+ */
+function keepAim (bot: Bot, point: Vec3): void {
+  void bot.lookAt(point, true)
+}
+
 /** mineflayer's dig at the face the crosshair hits, stopped when the crosshair leaves the block; true when it broke */
 async function crosshairDig (bot: Bot, block: Block, point: Vec3, face: number, reach: number, signal?: AbortSignal): Promise<boolean> {
   let off = false
   const onTick = (): void => {
+    keepAim(bot, point)
     const hit = crosshairBlock(bot, reach)
     if (hit == null || !hit.block.position.equals(block.position)) {
       off = true
@@ -256,6 +266,7 @@ async function mouseDig (bot: Bot, block: Block, point: Vec3, reach: number, sig
       await bot.waitForTicks(1)
       if (broken(bot, pos, block.type)) return true
       if (signal?.aborted === true) throw signal.reason ?? new Error('aborted')
+      keepAim(bot, point)
       const cursor: Block | null = b.mouse.getCursorState?.().cursorBlock ?? crosshairBlock(bot, reach)?.block ?? null
       if (cursor == null || !cursor.position.equals(pos)) return false
     }
