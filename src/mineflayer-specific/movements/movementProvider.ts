@@ -163,6 +163,8 @@ export class MovementHandler implements AMovementProvider<Move> {
   recognizedMovements: MovementProvider[]
   /** moves (moveKey) the search leaves out: ones that failed in this goto */
   avoid?: ReadonlySet<string>
+  /** the factor each move found costs (avoidance.ts: the mobs and spawners about, the path walked before) */
+  costFactor?: (move: Move) => number
   goal!: goals.Goal
   world: World
 
@@ -383,6 +385,14 @@ export class MovementHandler implements AMovementProvider<Move> {
     if (this.avoid != null && this.avoid.size > 0) {
       for (let i = moves.length - 1; i >= 0; i--) {
         if (this.avoid.has(moveKey(moves[i]))) moves.splice(i, 1)
+      }
+    }
+
+    if (this.costFactor != null) {
+      for (const m of moves) {
+        const f = this.costFactor(m)
+        // (the move's cost is set once, here, before the search reads it)
+        if (f !== 1) (m as { cost: number }).cost = m.cost * f
       }
     }
 

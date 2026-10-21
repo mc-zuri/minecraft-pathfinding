@@ -92,6 +92,23 @@ export interface MovementOptions {
 
   /** "Keep out" rules for blocks the bot would PLACE (build on). See {@link exclusionAreasStep}. */
   exclusionAreasPlace: ExclusionArea[]
+
+  /**
+   * Costs round the hostile mobs about and the spawners near when a search starts (avoidance.ts, Baritone's
+   * Avoidance): a move ending within mobAvoidanceRadius of a hostile (a spider only in the dark, a zombified piglin
+   * only angry, an enderman only provoked) costs mobAvoidanceCoefficient times as much, within spawnerAvoidanceRadius
+   * of a spawner spawnerAvoidanceCoefficient times. Off: false, or the coefficients 1.
+   */
+  avoidance: boolean
+  mobAvoidanceCoefficient: number
+  mobAvoidanceRadius: number
+  spawnerAvoidanceCoefficient: number
+  spawnerAvoidanceRadius: number
+  /**
+   * The factor a move ending on a cell of the path the goto walked last costs (Baritone's Favoring,
+   * backtrackCostFavoringCoefficient): under 1, a search again after a reset keeps to the way it had. 1: off.
+   */
+  backtrackFavoringCoefficient: number
 }
 
 export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
@@ -131,7 +148,15 @@ export const DEFAULT_MOVEMENT_OPTS: MovementOptions = {
   // No exclusion zones by default. Add your own with bot.pathfinder.setMoveOptions(...).
   exclusionAreasStep: [],
   exclusionAreasBreak: [],
-  exclusionAreasPlace: []
+  exclusionAreasPlace: [],
+  // Baritone's mobAvoidanceCoefficient and radius, mobSpawnerAvoidanceCoefficient and radius, and
+  // backtrackCostFavoringCoefficient
+  avoidance: true,
+  mobAvoidanceCoefficient: 1.5,
+  mobAvoidanceRadius: 8,
+  spawnerAvoidanceCoefficient: 2,
+  spawnerAvoidanceRadius: 16,
+  backtrackFavoringCoefficient: 0.5
 }
 
 // Lock the default exclusion lists so the single shared instances above can never

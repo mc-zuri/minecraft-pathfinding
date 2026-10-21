@@ -8,6 +8,7 @@ import { Move } from './mineflayer-specific/move'
 import { BlockInfo, CacheSyncWorld } from './mineflayer-specific/world/cacheWorld'
 import { PredictionCheck } from './diagnostics/predictionCheck'
 import { EdgeGuard, predictLanding } from './mineflayer-specific/edgeGuard'
+import { cellCostFactor, collectAvoidances, pathCells } from './mineflayer-specific/avoidance'
 import { ResetError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveExecutor,
@@ -148,6 +149,26 @@ export class ThePathfinder {
    * go where no move ran (interrupt).
    */
   private gotoCancelled = false
+
+  /** the cells of the path the goto walked last (the favoring's: backtrackFavoringCoefficient) */
+  private walkedCells?: Set<string>
+
+  /** a path the goto walks: its cells the favored ones of the searches after (PathExecutor.perform) */
+  public notePathWalked (path: Move[]): void {
+    if (path.length > 0) this.walkedCells = pathCells(path)
+  }
+
+  /**
+   * The factor of each move a search starting now finds (avoidance.ts): the hostile mobs about and the spawners near
+   * (collectAvoidances), and the cells of the path walked last; undefined for none
+   */
+  public searchCostFactor (settings: MovementOptions = this.defaultMoveSettings): ((move: Move) => number) | undefined {
+    const avoidances = collectAvoidances(this.bot, settings)
+    const favored = this.isPathing ? this.walkedCells : undefined
+    const favorCoef = settings.backtrackFavoringCoefficient ?? 1
+    if (avoidances.length === 0 && (favored == null || favorCoef === 1)) return undefined
+    return (move: Move) => cellCostFactor(avoidances, favored, favorCoef, Math.floor(move.exitPos.x), Math.floor(move.exitPos.y + 1e-6), Math.floor(move.exitPos.z))
+  }
 
   /** the error goto ends with once its walk is over (handBack: a move failed 'too low' in the water) */
   private gotoError?: Error
@@ -741,6 +762,7 @@ export class ThePathfinder {
     this.failedMoves.clear()
     delete this.lastSearch
     delete this.gotoError
+    delete this.walkedCells
     this.executeTask = new Task()
     this.currentGotoGoal = goal
     this.bot.emit('goalSet', goal)

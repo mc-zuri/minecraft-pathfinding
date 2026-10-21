@@ -249,6 +249,8 @@ export class PathExecutor {
 
     this.setCurrentIndex(currentIndex)
     this.setCurrentPath(localPath)
+    // (its cells the favored ones of the searches after: backtrackFavoringCoefficient)
+    this.host.notePathWalked(localPath)
 
     // the bot already stands where the goal holds: the search ends at its start, with no move to make
     if (localPath.length === 0 && path.status === 'success') return

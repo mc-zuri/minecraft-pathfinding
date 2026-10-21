@@ -79,3 +79,6 @@ export { EdgeGuard, predictEdgeFall, landingUnder, onFootOnGround } from './mine
 export type { EdgeFall, EdgeGuardOptions } from './mineflayer-specific/edgeGuard'
 
 export { PathfinderSinkingError } from './mineflayer-specific/exceptions'
+
+export { isAvoidedMob, collectAvoidances, cellCostFactor } from './mineflayer-specific/avoidance'
+export type { Avoidance } from './mineflayer-specific/avoidance'
