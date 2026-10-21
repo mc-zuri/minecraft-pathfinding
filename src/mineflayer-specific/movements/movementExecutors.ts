@@ -197,7 +197,7 @@ export class NewForwardExecutor extends MovementExecutor {
         !this.bot.getControlState('jump') &&
         !this.doWaterLogic() &&
         this.canJump(thisMove, currentIndex, path)) ||
-      this.bot.entity.position.y < Math.round(thisMove.entryPos.y) - 1
+      (!this.inLiquid() && this.bot.entity.position.y < Math.round(thisMove.entryPos.y) - 1)
     ) {
       // console.log(this.bot.entity.position, thisMove.entryPos)
       throw new CancelError(`ForwardMove: not on ground. Target pos: ${thisMove.exitPos}, us: ${this.bot.entity.position}`)
@@ -468,7 +468,7 @@ export class ForwardJumpExecutor extends MovementExecutor {
       else if (!this.leftGround) this.bot.setControlState('jump', this.shitter.jumpLandsNow(thisMove.exitPos))
     }
 
-    if (this.bot.entity.position.y - thisMove.exitPos.y < -1.25) throw new CancelError('ForwardJumpMove: too low (1)')
+    if (!this.inLiquid() && this.bot.entity.position.y - thisMove.exitPos.y < -1.25) throw new CancelError('ForwardJumpMove: too low (1)')
 
     const landed = this.walkingUp || this.hazard != null ? this.leftGround && this.bot.entity.onGround : tickCount > (this.jumpInfo?.jumpTick ?? 0) && this.bot.entity.onGround
     if (landed) {
@@ -643,7 +643,7 @@ export class StraightDownExecutor extends MovementExecutor {
       return tickCount > 0 && this.bot.entity.position.y <= thisMove.exitPos.y
     }
 
-    if (this.bot.entity.position.y < thisMove.exitPos.y) throw new CancelError('StraightDown: too low')
+    if (!this.inLiquid() && this.bot.entity.position.y < thisMove.exitPos.y) throw new CancelError('StraightDown: too low')
 
     this.steerOverHole(thisMove)
     return tickCount > 0 && this.bot.entity.onGround && this.bot.entity.position.y === thisMove.exitPos.y
@@ -833,7 +833,7 @@ export class StraightUpExecutor extends MovementExecutor {
     // under the start's cell: the start's own height is where the bot was as the search began, and a swimmer sinks a
     // hair under it before its jump (jumpInLiquid) takes it up: a 1.21.11 bot in the sea failed its StraightUp the
     // tick after it started, again and again as it sank (f1-grim)
-    if (this.bot.entity.position.y < Math.floor(thisMove.entryPos.y + 1e-6)) {
+    if (!this.inLiquid() && this.bot.entity.position.y < Math.floor(thisMove.entryPos.y + 1e-6)) {
       throw new CancelError('StraightUp: too low')
     }
 

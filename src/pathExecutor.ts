@@ -51,6 +51,28 @@ export const NO_PROGRESS_DIST = 0.25
 export const MOVE_TICKS_FACTOR = 5
 export const MIN_MOVE_TICKS = 100
 
+/**
+ * Off the path (Baritone's PathExecutor): more than OFF_PATH_DIST blocks from the current move's line for
+ * OFF_PATH_TICKS ticks, or more than OFF_PATH_MAX_DIST at once, and the move fails (goto searches again from there)
+ */
+export const OFF_PATH_DIST = 2
+export const OFF_PATH_MAX_DIST = 3
+export const OFF_PATH_TICKS = 200
+
+/**
+ * Ticks a swimmer may stay more than a block under its move's start, its jump held (MovementExecutor.holdJumpInLiquid:
+ * a ceiling over the water, a current), before the walk hands back (PathfinderSinkingError)
+ */
+export const SINK_TICKS = 40
+
+/** the distance from a point to the segment from a to b */
+function distanceToSegment (p: Vec3, a: Vec3, b: Vec3): number {
+  const ab = b.minus(a)
+  const len2 = ab.dot(ab)
+  const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, p.minus(a).dot(ab) / len2))
+  return p.distanceTo(a.plus(ab.scaled(t)))
+}
+
 /** physics ticks one movement tick may go on over (runSync) before the walk fails */
 export const MAX_TICK_IN_FLIGHT = 100
 
@@ -247,6 +269,9 @@ export class PathExecutor {
     let moveTicks = 0
     // the edge guard's catches the current move has seen (EdgeGuard.catches)
     let guardCatches = 0
+    // ticks the bot has been off the path (OFF_PATH_DIST), and sunk under its move in a liquid (SINK_TICKS)
+    let offPathTicks = 0
+    let sunkTicks = 0
     // A move that holds the bot in one place (a jump it never lines up for, a corner it presses into) fails after
     // NO_PROGRESS_TICKS, so that goto searches again without it; a dig or a place under way is progress.
     const checkProgress = (executor: MovementExecutor, move: Move): void => {
@@ -265,6 +290,15 @@ export class PathExecutor {
           throw new CancelError(`edge guard: the bot's keys would have taken it off ${depth}${fall.lava ? ' into lava' : ''} at ${fall.from.toString()} (${fall.allowed} allowed)`)
         }
       }
+      // off the path: more than OFF_PATH_MAX_DIST from the move's line at once, more than OFF_PATH_DIST for
+      // OFF_PATH_TICKS (a swim's drift, a fall short of the move's level is no failure till then)
+      const off = distanceToSegment(pos, move.entryPos, move.exitPos)
+      if (off > OFF_PATH_MAX_DIST) throw new CancelError(`off the path: ${off.toFixed(1)} blocks from the move to ${move.exitPos.toString()}`)
+      offPathTicks = off > OFF_PATH_DIST ? offPathTicks + 1 : 0
+      if (offPathTicks > OFF_PATH_TICKS) throw new CancelError(`off the path for ${OFF_PATH_TICKS} ticks, ${off.toFixed(1)} blocks from the move to ${move.exitPos.toString()}`)
+      // a swimmer more than a block under its move's start, its jump held, for SINK_TICKS: it can't come up there
+      sunkTicks = executor.inLiquid() && pos.y < move.entryPos.y - 1 ? sunkTicks + 1 : 0
+      if (sunkTicks > SINK_TICKS) throw new CancelError(`MovementExecutor: bot is too low in the water for ${SINK_TICKS} ticks`)
       // a move that goes on and on (a jump it backs up for and walks up to again and again) fails too, after
       // MOVE_TICKS_FACTOR times its cost in ticks
       if (!interacting && ++moveTicks > Math.max(MIN_MOVE_TICKS, MOVE_TICKS_FACTOR * move.cost)) {
@@ -331,12 +365,15 @@ export class PathExecutor {
       bot.emit('pathfinderMoveFailed', info)
     }
 
-    // A move that fails 'too low' with the bot in the water (sinking under the move it was to swim) ends goto at once
-    // (PathfinderSinkingError, the keys let go), for the caller to take the bot up for air: a search from the bot
-    // sinking on planned the same again, each move failing a block or two lower, and a 1.21.11 bot in a kelp sea
-    // failed 6 moves in a row from y 62 down to 54 and drowned (f1-grim, t108690)
+    // A move that fails with the bot in a liquid more than a block under the move's start (sunk under the move it was
+    // to swim, its jump held: SINK_TICKS, or off the path) ends goto at once (PathfinderSinkingError, the keys let go),
+    // for the caller to take the bot up for air: a search from the bot sinking on planned the same again, each move
+    // failing a block or two lower, and a 1.21.11 bot in a kelp sea failed 6 moves in a row from y 62 down to 54 and
+    // drowned (f1-grim, t108690). A swimmer off its way at its move's level searches again from there.
     const handBackIfSinking = (err: CancelError): void => {
-      if (!/too low/i.test(err.message) || (bot.entity as any).isInWater !== true) return
+      const e = bot.entity as any
+      const move = this.getCurrentMove() ?? localPath[currentIndex]
+      if ((e.isInWater !== true && e.isInLava !== true) || move == null || !(e.position.y < move.entryPos.y - 1)) return
       bot.clearControlStates()
       this.host.handBack(new PathfinderSinkingError(bot.entity.position.clone(), err.message))
     }
@@ -466,6 +503,8 @@ export class PathExecutor {
         progressPos = bot.entity.position.clone()
         stillTicks = 0
         moveTicks = 0
+        offPathTicks = 0
+        sunkTicks = 0
         // (a catch before the move, between paths, is no failure of its)
         guardCatches = this.host.edgeGuard.catches
 
@@ -574,6 +613,7 @@ export class PathExecutor {
             )
             // (a walk ended while the tick went on: its stages are no longer this tick's)
             if (settled) return
+            executor.holdJumpInLiquid(move)
             tickCount++
 
             if (aligned) {
@@ -618,6 +658,7 @@ export class PathExecutor {
               async () => await executor._performPerTick(move, tickCount, currentIndex, localPath)
             )
             if (settled) return
+            executor.holdJumpInLiquid(move)
             tickCount++
 
             if (adding) {

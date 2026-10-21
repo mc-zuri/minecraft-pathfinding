@@ -49,8 +49,12 @@ export interface SimOpts {
 
 export interface PostInitAlignOpts { handleBack?: boolean, lookAt?: Vec3, lookAtYaw?: Vec3, sprint?: boolean }
 
-/** blocks off a move's way across (past its exit, or to the side) that the bot is taken to have left it (MovementExecutor.ranPast) */
-export const RAN_PAST = 2
+/**
+ * blocks off a move's way across (past its exit, or to the side) past which the bot is taken to have left it at once
+ * (MovementExecutor.ranPast; Baritone's PathExecutor gives up on a path at once 3 blocks off it, MAX_MAX_DIST_FROM_PATH,
+ * and after 200 ticks 2 off: PathExecutor's own count, OFF_PATH_TICKS)
+ */
+export const RAN_PAST = 3
 
 export abstract class MovementExecutor extends Movement {
   /**
@@ -135,7 +139,25 @@ export abstract class MovementExecutor extends Movement {
     return this.currentMove.toPlace.filter(b => b.needToPerform(this.bot))
   }
 
+  /** the bot is in water or lava: a swimmer, whose height its jump keeps (holdJumpInLiquid), never too low */
+  public inLiquid (): boolean {
+    const e = this.bot.entity as any
+    return e?.isInWater === true || e?.isInLava === true
+  }
+
+  /**
+   * In a liquid the bot holds jump while its feet are under the move's exit plus 0.6, whatever the move's own keys
+   * (as Baritone's Movement.update has every movement do): it swims up to the move's level and keeps there, where
+   * the executors that set no jump in the water let it sink under the move and failed it 'too low', goto after goto
+   * till it drowned (f1-grim). Called by the path's runner after each tick of the move's align and perform.
+   */
+  public holdJumpInLiquid (thisMove: Move): void {
+    if (!this.inLiquid()) return
+    this.bot.setControlState('jump', this.bot.entity.position.y < thisMove.exitPos.y + 0.6)
+  }
+
   protected isTooLow (thisMove: Move) {
+    if (this.inLiquid()) return
     const botY = this.bot.entity.position.y + 0.6 // allow step up
 
     const block = this.getBlockInfo(this.bot.entity.position, 0, 0, 0)
@@ -622,7 +644,8 @@ export abstract class MovementExecutor extends Movement {
     const off0 = thisMove.exitPos.minus(this.bot.entity.position).normalize()
     const off1 = thisMove.exitPos.minus(target).normalize()
 
-    if (this.bot.entity.position.y < thisMove.entryPos.y - 1) throw new CancelError('MovementExecutor: bot is too low.')
+    // (a swimmer under its move is taken up by its jump: holdJumpInLiquid)
+    if (!this.inLiquid() && this.bot.entity.position.y < thisMove.entryPos.y - 1) throw new CancelError('MovementExecutor: bot is too low.')
 
     log('isInitAligned: off0.dot(off1)=%d', off0.dot(off1))
 
