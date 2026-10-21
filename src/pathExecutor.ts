@@ -768,6 +768,11 @@ export class PathExecutor {
       if (runnerStage === 'init' || pendingInit != null) {
         // a move's start (its digs and places before it sets off) that never ends fails the move, in the game's ticks
         const move = this.getCurrentMove()
+        // a swimmer keeps its height while the start digs, as through the align's and the perform's ticks (a start lets
+        // go of the keys for its digs: a ForwardJump out of the sea sank under the stone it dug on the shore, the
+        // crosshair went off it onto the one under it at each try, and 'no dig of the stone held the crosshair' failed
+        // the move again and again, f9-1.21.11)
+        if (move != null) this.getCurrentExecutor()?.holdJumpInLiquid(move)
         const limit = move != null ? Math.max(MIN_MOVE_TICKS, MOVE_TICKS_FACTOR * move.cost) : Infinity
         if (move != null && ++initTicks > limit) {
           initTicks = 0
