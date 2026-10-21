@@ -60,6 +60,15 @@ export const OFF_PATH_MAX_DIST = 3
 export const OFF_PATH_TICKS = 200
 
 /**
+ * In a liquid, off the path is measured across (the bot's horizontal distance from the move's line: a swimmer bobs
+ * and sinks under it) and wider: past OFF_PATH_LIQUID_DIST for OFF_PATH_TICKS, past OFF_PATH_LIQUID_MAX_DIST at once.
+ * A current and a swimmer's drift took a 26.3 bot in watery land 3.3 blocks off its moves again and again, each a
+ * failure and a search again, and it had no wood after 7415 ticks (f8-26.3)
+ */
+export const OFF_PATH_LIQUID_DIST = 4
+export const OFF_PATH_LIQUID_MAX_DIST = 5
+
+/**
  * Ticks a swimmer may stay more than a block under its move's start, its jump held (MovementExecutor.holdJumpInLiquid:
  * a ceiling over the water, a current), before the walk hands back (PathfinderSinkingError)
  */
@@ -294,9 +303,12 @@ export class PathExecutor {
       }
       // off the path: more than OFF_PATH_MAX_DIST from the move's line at once, more than OFF_PATH_DIST for
       // OFF_PATH_TICKS (a swim's drift, a fall short of the move's level is no failure till then)
-      const off = distanceToSegment(pos, move.entryPos, move.exitPos)
-      if (off > OFF_PATH_MAX_DIST) throw new CancelError(`off the path: ${off.toFixed(1)} blocks from the move to ${move.exitPos.toString()}`)
-      offPathTicks = off > OFF_PATH_DIST ? offPathTicks + 1 : 0
+      const swimming = executor.inLiquid()
+      const off = swimming
+        ? distanceToSegment(new Vec3(pos.x, 0, pos.z), new Vec3(move.entryPos.x, 0, move.entryPos.z), new Vec3(move.exitPos.x, 0, move.exitPos.z))
+        : distanceToSegment(pos, move.entryPos, move.exitPos)
+      if (off > (swimming ? OFF_PATH_LIQUID_MAX_DIST : OFF_PATH_MAX_DIST)) throw new CancelError(`off the path: ${off.toFixed(1)} blocks from the move to ${move.exitPos.toString()}`)
+      offPathTicks = off > (swimming ? OFF_PATH_LIQUID_DIST : OFF_PATH_DIST) ? offPathTicks + 1 : 0
       if (offPathTicks > OFF_PATH_TICKS) throw new CancelError(`off the path for ${OFF_PATH_TICKS} ticks, ${off.toFixed(1)} blocks from the move to ${move.exitPos.toString()}`)
       // a swimmer more than a block under its move's start, its jump held, for SINK_TICKS: it can't come up there
       sunkTicks = executor.inLiquid() && pos.y < move.entryPos.y - 1 ? sunkTicks + 1 : 0

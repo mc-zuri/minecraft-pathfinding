@@ -149,3 +149,30 @@ for (const version of ['1.21.11', '26.3']) {
     }
   })
 }
+
+for (const version of ['26.3', '1.21.11']) {
+  test(`${version}: a swimmer pushed sideways by a current (3 to 4 blocks off its moves' line) still swims to the shore, no move failed off the path (f8-26.3: 'off the path: 3.3 blocks' again and again in watery land)`, async () => {
+    const { rig, bot } = await seaRig(version)
+    const failed: string[] = []
+    bot.on('pathfinderMoveFailed', (info: any) => failed.push(String(info.error)))
+    // a current across the way halfway over: a push along +z for 15 ticks (a flow's, as Entity.updateFluidHeightAndDoFluidPushing
+    // gives it), the swimmer 3 to 4 blocks off its move's line
+    let pushes = 0
+    const current = (): void => {
+      if (bot.entity.isInWater === true && bot.entity.position.x > -2 && pushes++ < 15) bot.entity.velocity = bot.entity.velocity.offset(0, 0, 0.08)
+    }
+    bot.on('physicsTickBegin', current)
+    try {
+      bot.entity.position = new Vec3(-6.5, 62.2, -6.5)
+      bot.entity.velocity = new Vec3(0, 0, 0)
+      const goal = new goals.GoalBlock(11, 63, -6)
+      await withTimeout(bot.pathfinder.goto(goal), 40000, `goto timed out at ${bot.entity.position}`)
+      const at = bot.entity.position
+      assert.ok(at.x > 8.5, `ended at ${at} (${failed.join(' | ')})`)
+      assert.deepEqual(failed.filter(f => /off the path|ran off/.test(f)), [])
+    } finally {
+      bot.off('physicsTickBegin', current)
+      rig.stopPassivePhysics()
+    }
+  })
+}

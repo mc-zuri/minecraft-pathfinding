@@ -55,6 +55,8 @@ export interface PostInitAlignOpts { handleBack?: boolean, lookAt?: Vec3, lookAt
  * and after 200 ticks 2 off: PathExecutor's own count, OFF_PATH_TICKS)
  */
 export const RAN_PAST = 3
+/** RAN_PAST for a swimmer (PathExecutor's OFF_PATH_LIQUID_MAX_DIST) */
+export const RAN_PAST_LIQUID = 5
 
 export abstract class MovementExecutor extends Movement {
   /**
@@ -628,7 +630,8 @@ export abstract class MovementExecutor extends Movement {
     pos.translate(0, -pos.y, 0)
     const len2 = dir.dot(dir)
     const t = len2 < 1e-9 ? 0 : Math.max(0, Math.min(1, pos.dot(dir) / len2))
-    return pos.minus(dir.scaled(t)).norm() > RAN_PAST
+    // (a swimmer's drift, a current's push: the wider bound of the path's runner in a liquid, OFF_PATH_LIQUID_MAX_DIST)
+    return pos.minus(dir.scaled(t)).norm() > (this.inLiquid() ? RAN_PAST_LIQUID : RAN_PAST)
   }
 
   /** fails the move (a CancelError: goto searches again from where the bot is) once the bot ran past it (ranPast) */
