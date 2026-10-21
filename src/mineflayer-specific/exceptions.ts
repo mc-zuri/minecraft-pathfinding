@@ -54,3 +54,18 @@ export class PathfinderSinkingError extends Error {
     this.name = 'PathfinderSinkingError'
   }
 }
+
+/**
+ * goto's end short of its goal, not called off (cancel, a new goto, handBack): the search found no way on (`reason`
+ * the search's end: 'noPath', 'timeout' no nearer, 'canceled'), or the walk ended where the goal doesn't hold
+ * ('pathEnded'). `code` is 'GOAL_NOT_REACHED'; `pos` where the bot stands, `goal` the goto's, `lastMoveError` the
+ * error of the last move that failed, if one did. goto resolved then, the bot outside a room of leaves whose breaks
+ * the server refused (spawn protection), and its caller went on as if it had got there.
+ */
+export class GoalNotReachedError extends Error {
+  public readonly code = 'GOAL_NOT_REACHED'
+  constructor (public readonly pos: import('vec3').Vec3, public readonly goal: unknown, public readonly reason: string, public readonly lastMoveError?: string) {
+    super(`Goto: ended at ${pos.toString()}, short of the goal (${reason === 'pathEnded' ? 'the path ended there' : `the search ended: ${reason}`}${lastMoveError != null ? `; the last move failed: ${lastMoveError}` : ''})`)
+    this.name = 'GoalNotReachedError'
+  }
+}

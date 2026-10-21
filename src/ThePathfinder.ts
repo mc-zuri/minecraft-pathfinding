@@ -9,7 +9,7 @@ import { BlockInfo, CacheSyncWorld } from './mineflayer-specific/world/cacheWorl
 import { PredictionCheck } from './diagnostics/predictionCheck'
 import { EdgeGuard, predictLanding } from './mineflayer-specific/edgeGuard'
 import { cellCostFactor, collectAvoidances, pathCells } from './mineflayer-specific/avoidance'
-import { ResetError } from './mineflayer-specific/exceptions'
+import { GoalNotReachedError, ResetError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveExecutor,
   BuildableMoveProvider,
@@ -172,6 +172,9 @@ export class ThePathfinder {
 
   /** the error goto ends with once its walk is over (handBack: a move failed 'too low' in the water) */
   private gotoError?: Error
+
+  /** goto's end short of its goal, not called off (cleanupAll): the error it rejects with (GoalNotReachedError) */
+  private gotoShort?: GoalNotReachedError
 
   /**
    * Ends the goto under way as a cancel does (no further search or walk), its promise rejecting with `err` once it's
@@ -762,6 +765,7 @@ export class ThePathfinder {
     this.failedMoves.clear()
     delete this.lastSearch
     delete this.gotoError
+    delete this.gotoShort
     delete this.walkedCells
     this.executeTask = new Task()
     this.currentGotoGoal = goal
@@ -779,6 +783,11 @@ export class ThePathfinder {
     const handedBack = this.gotoError
     delete this.gotoError
     if (handedBack != null) throw handedBack
+    // short of the goal and not called off: an error, not a goto that seems to have got there (a cancel, a new goto
+    // or the goal's reassignment still ends it quietly)
+    const short = this.gotoShort
+    delete this.gotoShort
+    if (short != null) throw short
   }
 
   private async _goto (goal: goals.Goal, performOpts: PerformOpts = {}): Promise<void> {
@@ -1055,7 +1064,8 @@ export class ThePathfinder {
     // too when its search does (no path, a timeout no nearer, cancelled), the walk of a partial path wherever it got
     // to, and a dig from there (6 blocks off, 60 over a diamond) is one the server refuses. A walk that got there has
     // no current executor (each finished move unsets it): any of the movements' does, onFinish takes only its bot
-    if (!cancelled && goal != null && this.goalHolds(goal)) {
+    const holds = goal != null && this.goalHolds(goal)
+    if (!cancelled && holds) {
       const exec = executor ?? this.activeMappings.movements.values().next().value
       if (exec != null) await goal.onFinish(exec)
     }
@@ -1063,6 +1073,13 @@ export class ThePathfinder {
 
     if (cancelled || this.resetReason === 'goalReassignment') {
       log('Cleanup: Goal aborted.')
+      this.bot.emit('goalAborted', goal)
+    } else if (goal != null && !holds) {
+      // the search ended with no way on (no path, a timeout no nearer, a search cancelled by a reset), or the walk
+      // ended where the goal doesn't hold: goto rejects (GoalNotReachedError), the goal's end not run
+      const pos = this.bot.entity.position.clone()
+      this.gotoShort = new GoalNotReachedError(pos, goal, this.lastSearch?.status ?? 'pathEnded', this.executionRunner.lastMoveError)
+      log('Cleanup: Goal not reached at %s.', pos.toString())
       this.bot.emit('goalAborted', goal)
     } else {
       log('Cleanup: Goal finished.')

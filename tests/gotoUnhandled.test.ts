@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Vec3 } from 'vec3'
 
-import { createPlugin, goals } from '../src'
+import { createPlugin, goals, GoalNotReachedError } from '../src'
 import { createCacheWorld } from './setup'
 
 test('goto: a walk of a partial path that fails after the search ended (noPath) is no unhandled rejection', async () => {
@@ -24,7 +24,8 @@ test('goto: a walk of a partial path that fails after the search ended (noPath) 
       await rig.bot.waitForTicks(3)
       throw new Error('StraightUp took over 191 ticks to start')
     }
-    await pf.goto(new goals.GoalBlock(10, 64, 0))
+    // (goto itself ends short of the goal: GoalNotReachedError, its search's noPath)
+    await assert.rejects(pf.goto(new goals.GoalBlock(10, 64, 0)), (err: any) => err instanceof GoalNotReachedError && err.reason === 'noPath')
     await rig.bot.waitForTicks(6)
     await new Promise((resolve) => setImmediate(resolve))
     assert.deepEqual(unhandled.map((e) => (e as Error).message), [])

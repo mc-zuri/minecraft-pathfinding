@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Vec3 } from 'vec3'
 
-import { createPlugin, goals } from '../src'
+import { createPlugin, goals, GoalNotReachedError } from '../src'
 import { createCacheWorld } from './setup'
 
 function withTimeout<T> (promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -33,7 +33,9 @@ for (const partialPathProducer of [false, true]) {
       const goal = goals.GoalMineBlock.fromBlock(rig.bot.pathfinder.world as any, rig.bot.blockAt(new Vec3(12, 64, 0)) as any, 4, 1.62)
       let finished = 0
       goal.onFinish = async () => { finished++ }
-      await withTimeout(rig.bot.pathfinder.goto(goal), 30000, `goto searched on for good (at ${rig.bot.entity.position})`)
+      // (short of it: goto rejects, GoalNotReachedError)
+      const err = await withTimeout(rig.bot.pathfinder.goto(goal).then(() => null, (e: unknown) => e), 30000, `goto searched on for good (at ${rig.bot.entity.position})`)
+      assert.ok(err instanceof GoalNotReachedError, `goto ended with ${String((err as Error)?.message ?? err)}`)
       assert.ok(rig.bot.entity.position.distanceTo(new Vec3(0.5, 64, 0.5)) > 3, `the bot stayed at ${rig.bot.entity.position}`)
       assert.equal(finished, 0, `onFinish ran at ${rig.bot.entity.position}, where the goal doesn't hold`)
     } finally {
