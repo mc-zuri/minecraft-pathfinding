@@ -480,6 +480,12 @@ export class StraightUp extends MovementProvider {
       if (!block3.liquid) {
         if (!this.settings.allow1by1towers || node.remainingBlocks <= 0) return // not enough blocks to place
 
+        // no tower from a cell of water (or lava): its block goes into the cell the bot swims in, and a swimmer's feet
+        // never get over it (LivingEntity.aiStep: in a liquid deeper than the jump threshold the jump is jumpInLiquid's
+        // 0.04 a tick, not jumpFromGround), the place 'Invalid placement' at each try, the bot's box in the cell (a 26.3
+        // bot in a pool a block deep bobbed up to 64.96 under its place at 64, f9-26.3)
+        if (block1.liquid) return
+
         if (!block1.replaceable) {
           if ((cost += this.breakCost(block1)) > COST_INF) return
           toBreak.push(BreakHandler.fromVec(block1.position, 'solid'))
