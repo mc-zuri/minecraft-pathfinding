@@ -130,8 +130,16 @@ export class BlockInfo {
     if (registry.blocksByName.ender_chest != null) BlockInfo.interactableBlocks.add(registry.blocksByName.ender_chest.id)
 
     registry.blocksArray.forEach((block) => {
-      if (block.diggable == null || block.diggable) return
       if (block.id == null) return
+      // an infested block (InfestedBlock) lets a silverfish out when broken, and the silverfish's call wakes those in
+      // the infested blocks round it (SilverfishEntity's WakeUpFriendsGoal), as Baritone's avoidBreaking keeps clear
+      // of: never broken for a move, the way goes round it. A 26.3 bot mining iron at y 29 broke into a nest and was
+      // slain by 9 silverfish (f5-26.3).
+      if (block.name?.startsWith('infested_') === true) {
+        BlockInfo.blocksCantBreak.add(block.id)
+        return
+      }
+      if (block.diggable == null || block.diggable) return
       BlockInfo.blocksCantBreak.add(block.id)
     })
 
