@@ -203,6 +203,35 @@ export function predictEdgeFall (bot: Bot, allowed: number, opts: { controls?: C
   return { depth, allowed, from, over, jump, lava }
 }
 
+/** ticks the bot's fall is followed to where it comes down (predictLanding), at most */
+const MAX_LANDING_TICKS = 60
+
+/**
+ * Where the bot's feet come to rest with its keys let go, when it's in the air now (a jump, a fall, the top of a
+ * swimmer's bob out of the water): its position the first tick it's on the ground, in water or lava, on a ladder or in
+ * a web, as physics-util's engine (mineflayer's own physics) runs it with no input (LivingEntity.travel with none).
+ * Null when it's already on the ground, in a liquid or climbing, rides, glides or flies, or comes down nowhere in
+ * MAX_LANDING_TICKS (the void, a long fall).
+ */
+export function predictLanding (bot: Bot, opts: { world?: any, engine?: BotcraftPhysics } = {}): Vec3 | null {
+  const e: any = bot.entity
+  if (e == null || e.onGround === true || e.isInWater === true || e.isInLava === true || (bot as any).vehicle != null) return null
+  const engine = opts.engine ?? new BotcraftPhysics(bot.registry)
+  const ctx = EPhysicsCtx.FROM_BOT(engine, bot, (bot as any).physicsSettings)
+  const overrides = (bot as any).physicsSettings?.overrides
+  if (overrides != null) Object.assign(ctx, overrides)
+  const state = ctx.state
+  const rests = (): boolean => state.onGround || state.isInWater || state.isInLava || state.onClimbable || state.isInWeb
+  if (rests() || state.flying || state.fallFlying) return null
+  state.control = ControlStateHandler.DEFAULT()
+  const world = opts.world ?? (bot as any).physicsWorld ?? { getBlock: (pos: Vec3) => bot.blockAt(pos, false) }
+  for (let t = 0; t < MAX_LANDING_TICKS; t++) {
+    engine.simulate(ctx, world)
+    if (rests()) return state.pos.clone()
+  }
+  return null
+}
+
 /**
  * The guard over the bot's ticks (one physicsTickBegin listener, the last to run so the keys it sees are the tick's):
  * on a fall predictEdgeFall finds, the bot sneaks (Player.maybeBackOffFromEdge holds it at the edge whatever its speed)

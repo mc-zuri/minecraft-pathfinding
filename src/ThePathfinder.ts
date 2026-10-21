@@ -7,7 +7,7 @@ import { Vec3 } from 'vec3'
 import { Move } from './mineflayer-specific/move'
 import { BlockInfo, CacheSyncWorld } from './mineflayer-specific/world/cacheWorld'
 import { PredictionCheck } from './diagnostics/predictionCheck'
-import { EdgeGuard } from './mineflayer-specific/edgeGuard'
+import { EdgeGuard, predictLanding } from './mineflayer-specific/edgeGuard'
 import { ResetError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveExecutor,
@@ -581,7 +581,14 @@ export class ThePathfinder {
 
   getPathTo (goal: goals.Goal, settings = this.defaultMoveSettings): PathGenerator {
     const { movements } = this.activeMappings
-    return this.getPathFromTo(this.bot.entity.position, this.bot.entity.velocity, goal, settings, movements)
+    // The search starts where the bot comes to rest (predictLanding), not where it is in the air: a path made mid-jump
+    // started at a node it was never at, and one made at the top of a swimmer's bob out of the water started in the air
+    // over it. A 26.3 bot's first move, planned from y 38.16 over a flooded hole's water (its surface cell at y 37),
+    // failed 'bot is too low' as the bot sank back, goto after goto (full-26.3-fresh-z); from the surface cell it
+    // climbs out (ForwardJump).
+    const landing = predictLanding(this.bot)
+    const start = landing ?? this.bot.entity.position
+    return this.getPathFromTo(start, landing != null ? EMPTY_VEC : this.bot.entity.velocity, goal, settings, movements)
   }
 
   async * getPathFromTo (
