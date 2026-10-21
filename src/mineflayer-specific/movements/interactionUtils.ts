@@ -669,7 +669,8 @@ export class BreakHandler extends InteractHandler {
 
       case 'solid': {
         if (item === null) {
-          if (this.getCurrentItem(bot) !== null) await bot.unequip(this.offhand ? 'off-hand' : 'hand')
+          // (by hand: no tool digs it faster, and none worn for it)
+          if (this.offhand) { if (this.getCurrentItem(bot) !== null) await bot.unequip('off-hand') } else await bot.pathingUtil.handForDig()
         } else if (this.getCurrentItem(bot) !== item) {
           await this.equipItem(bot, item)
         }

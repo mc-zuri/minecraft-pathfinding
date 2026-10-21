@@ -134,4 +134,102 @@ for (const version of ['26.3', '1.21.11', '1.20.4']) {
       rig.stopPassivePhysics()
     }
   })
+  test(`${version}: no tool for a block no tool digs faster than the hand (dirt with a pickaxe), the shovel for it when there is one`, async () => {
+    const rig = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5)).rig
+    rig.bot.loadPlugin(createPlugin())
+    const bot: any = rig.bot
+    try {
+      const Item = require('prismarine-item')(version)
+      const put = (slot: number, name: string): void => {
+        const item = new Item(rig.mcData.itemsByName[name].id, 1)
+        item.slot = slot
+        bot.inventory.slots[slot] = item
+      }
+      bot.world.setBlock(new Vec3(1, 64, 0), 'dirt')
+      bot.world.setBlock(new Vec3(2, 64, 0), 'stone')
+      const dirt = bot.blockAt(new Vec3(1, 64, 0))
+      const stone = bot.blockAt(new Vec3(2, 64, 0))
+      put(36, 'iron_pickaxe')
+      put(37, 'stone_axe')
+      bot.pathingUtil.refresh()
+      assert.equal(bot.pathingUtil.bestHarvestingTool(dirt), null)
+      assert.equal(bot.pathingUtil.currentHarvestingTool(dirt), null)
+      assert.equal(bot.pathingUtil.digCost(dirt), dirt.digTime(null, false, false, false, [], bot.entity.effects))
+      assert.equal(bot.pathingUtil.bestHarvestingTool(stone)?.name, 'iron_pickaxe')
+      put(38, 'stone_shovel')
+      bot.pathingUtil.refresh()
+      assert.equal(bot.pathingUtil.bestHarvestingTool(dirt)?.name, 'stone_shovel')
+      assert.ok(bot.pathingUtil.digCost(dirt) < dirt.digTime(null, false, false, false, [], bot.entity.effects))
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  })
+
+  test(`${version}: a dig by hand holding a pickaxe with the bag full takes a hotbar slot of no tool, and throws nothing`, async () => {
+    const rig = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5)).rig
+    rig.bot.loadPlugin(createPlugin())
+    const bot: any = rig.bot
+    const pos = new Vec3(1, 64, 0)
+    bot.world.setBlock(pos, 'dirt')
+    bot.entity.position = new Vec3(0.5, 64, 0.5)
+    bot.entity.onGround = true
+    try {
+      const Item = require('prismarine-item')(version)
+      const put = (slot: number, name: string, count = 1): void => {
+        const item = new Item(rig.mcData.itemsByName[name].id, count)
+        item.slot = slot
+        bot.inventory.slots[slot] = item
+      }
+      // the bag full: the hotbar's tools, then cobblestone in slot 42
+      for (let slot = 9; slot < 45; slot++) put(slot, 'cobblestone', 64)
+      for (let slot = 36; slot < 42; slot++) put(slot, ['iron_pickaxe', 'stone_axe', 'stone_sword', 'wooden_hoe', 'shears', 'iron_pickaxe'][slot - 36])
+      bot.setQuickBarSlot(0)
+      bot.updateHeldItem()
+      bot.pathingUtil.refresh()
+      const tossed: string[] = []
+      bot.tossStack = async (item: any) => { tossed.push(item?.name) }
+      bot.toss = async (type: number) => { tossed.push(String(type)) }
+      let digWith: string | undefined
+      const dig = bot.dig.bind(bot)
+      bot.dig = async (...args: any[]) => { digWith = bot.heldItem?.name; return await dig(...args) }
+      const handler = BreakHandler.fromVec(pos, 'solid')
+      const move: any = { entryPos: new Vec3(0.5, 64, 0.5), exitPos: new Vec3(1.5, 64, 0.5), toPlace: [], toBreak: [handler] }
+      const executor = new NewForwardExecutor(bot, bot.pathfinder.world, bot.pathfinder.defaultMoveSettings)
+      executor.loadMove(move)
+      await withTimeout(executor.performInteraction(handler), 8000, 'the break never ended')
+      assert.equal(digWith, 'cobblestone')
+      assert.deepEqual(tossed, [])
+      assert.equal(bot.inventory.slots[36]?.name, 'iron_pickaxe')
+      assert.equal(bot.blockAt(pos).name, 'air')
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  })
+
+  test(`${version}: a dig by hand with only tools in the hotbar keeps the held one (no slot of no tool to take)`, async () => {
+    const rig = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5)).rig
+    rig.bot.loadPlugin(createPlugin())
+    const bot: any = rig.bot
+    try {
+      const Item = require('prismarine-item')(version)
+      for (let slot = 36; slot < 45; slot++) {
+        const item = new Item(rig.mcData.itemsByName.iron_pickaxe.id, 1)
+        item.slot = slot
+        bot.inventory.slots[slot] = item
+      }
+      bot.setQuickBarSlot(4)
+      bot.updateHeldItem()
+      await bot.pathingUtil.handForDig()
+      assert.equal(bot.quickBarSlot, 4)
+      // an empty hotbar slot is taken before one of no tool
+      const cobble = new Item(rig.mcData.itemsByName.cobblestone.id, 1)
+      cobble.slot = 37
+      bot.inventory.slots[37] = cobble
+      bot.inventory.slots[43] = null
+      await bot.pathingUtil.handForDig()
+      assert.equal(bot.quickBarSlot, 7)
+    } finally {
+      rig.stopPassivePhysics()
+    }
+  })
 }

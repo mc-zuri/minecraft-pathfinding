@@ -492,7 +492,7 @@ export class GoalMineBlock extends GoalLookAt {
     if (gone()) return
     const item = bot.pathingUtil.currentHarvestingTool(this.block)
     if (item != null) await bot.equip(item, 'hand')
-    else await bot.unequip('hand')
+    else await bot.pathingUtil.handForDig()
     bot.updateHeldItem()
     if (gone()) return
 

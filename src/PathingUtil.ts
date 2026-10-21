@@ -27,11 +27,16 @@ export class PathingUtil {
     )
   }
 
-  /** the fastest of the tools at the block, and its dig time (the hand's when there's none) */
+  /**
+   * The fastest of the tools at the block, and its dig time: none, and the hand's time, when no tool digs it faster than
+   * the hand. A tool wears by each block it breaks, whatever the block (Item.mineBlock: DiggerItem's hurtAndBreak when
+   * the block's destroy time is not 0), and the first tool of the bag was taken for every block no tool was faster at:
+   * a bot with no shovel dug dirt and grass with its pickaxe, as fast as by hand, and wore it.
+   */
   private fastestTool (block: Block, tools: Item[]): { tool: Item | null, digTime: number } {
     const effects = this.bot.entity.effects
     const creative = this.bot.game.gameMode === 'creative'
-    let fastest = Number.MAX_VALUE
+    let fastest = block.digTime(null, creative, false, false, [], effects)
     let bestTool: Item | null = null
     for (const tool of tools) {
       const enchants = tool.nbt != null ? nbt.simplify(tool.nbt).Enchantments : []
@@ -41,8 +46,26 @@ export class PathingUtil {
         bestTool = tool
       }
     }
-    if (fastest === Number.MAX_VALUE) fastest = block.digTime(null, creative, false, false, [], effects)
     return { tool: bestTool, digTime: fastest }
+  }
+
+  /**
+   * The hand for a dig by hand (no tool faster: fastestTool's none): the held item kept when it is no tool that wears,
+   * else a hotbar slot that's empty or holds no such tool selected; when every hotbar slot holds one, the held tool is
+   * kept. Not mineflayer's unequip('hand'): with the bag full it tosses the held stack (equipEmpty: tossStack), the
+   * pickaxe thrown away for a block of dirt.
+   */
+  public async handForDig (): Promise<void> {
+    const wears = (item: Item | null | undefined): boolean => item != null && ((item as any).maxDurability ?? 0) > 0
+    if (!wears(this.bot.heldItem)) return
+    const start = this.bot.inventory.hotbarStart
+    let slot: number | null = null
+    for (let i = 0; i < 9; i++) {
+      const item = this.bot.inventory.slots[start + i]
+      if (item == null) { slot = i; break }
+      if (slot == null && !wears(item)) slot = i
+    }
+    if (slot != null) this.bot.setQuickBarSlot(slot)
   }
 
   /**
