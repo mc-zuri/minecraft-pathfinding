@@ -161,19 +161,24 @@ export abstract class InteractHandler {
   async equipItem (bot: Bot, item: Item | null): Promise<void> {
     if (this._equipping) return // already equipping item, ignore silently.
     this._equipping = true
-    if (item === null) {
-      logBase(`Unequipping ${this.offhand ? 'off-hand' : 'hand'}`)
-      await bot.unequip(this.offhand ? 'off-hand' : 'hand')
-    } else if (this.offhand) {
-      logBase(`Equipping ${item.name} to off-hand`)
-      await bot.equip(item, 'off-hand')
-    } else {
-      logBase(`Equipping ${item.name} to hand`)
-      await bot.equip(item, 'hand')
+    // (a failed equip, the item gone from the bag meanwhile, frees the handler too: left set, every equip after
+    // returned at once and the place went on with the hand empty)
+    try {
+      if (item === null) {
+        logBase(`Unequipping ${this.offhand ? 'off-hand' : 'hand'}`)
+        await bot.unequip(this.offhand ? 'off-hand' : 'hand')
+      } else if (this.offhand) {
+        logBase(`Equipping ${item.name} to off-hand`)
+        await bot.equip(item, 'off-hand')
+      } else {
+        logBase(`Equipping ${item.name} to hand`)
+        await bot.equip(item, 'hand')
+      }
+      bot.updateHeldItem()
+    } finally {
+      // await bot.waitForTicks(2)
+      this._equipping = false
     }
-    bot.updateHeldItem()
-    // await bot.waitForTicks(2)
-    this._equipping = false
   }
 
   async allowExternalInfluence (bot: Bot, ticks = 1, sneak = false): Promise<boolean> {
@@ -393,6 +398,17 @@ export class PlaceHandler extends InteractHandler {
 
       case 'solid': {
         if (this.getCurrentItem(bot) !== item) await this.equipItem(bot, item)
+        // no block in the hand (the one picked thrown away since, its equip failed): fails here, before the place and
+        // its client-side prediction. The place went on, mineflayer refused it ('must be holding an item to place')
+        // after the predicted block was in the client's world, and the bot stood on it, a block the server never had:
+        // jumping up a pillar of them it was kicked for floating too long (mineflayer-survival ls3d-1.21.11, t380646)
+        if (this.getCurrentItem(bot)?.name !== item.name) {
+          const again = this.getItem(bot)
+          if (again != null) await this.equipItem(bot, again).catch(() => {})
+          const held = this.getCurrentItem(bot)
+          if (held == null || again == null || held.name !== again.name) throw new Error(`no block in hand to place at ${this.vec}`)
+          item = held
+        }
 
         const predictBlock = opts.predictBlock ?? true
 
@@ -475,11 +491,18 @@ export class PlaceHandler extends InteractHandler {
         const direction = faceToVec(rayRes.face)
 
         logPlace(`Calling bot._placeBlockWithOptions at face ${rayRes.face}`)
+        const predicted = rayRes.position.plus(direction)
+        const before = bot.blockAt(predicted)
         this._placeTask = bot._placeBlockWithOptions(rayRes, direction, { forceLook: 'ignore', swingArm: 'right' })
 
         if (predictBlock) {
-          logPlace(`Predicting block placement at ${rayRes.position.plus(direction)}`)
-          bot.world.setBlock(rayRes.position.plus(direction), BlockInfo.PBlock.fromStateId(BlockInfo.substituteBlockStateId, 0))
+          logPlace(`Predicting block placement at ${predicted}`)
+          bot.world.setBlock(predicted, BlockInfo.PBlock.fromStateId(BlockInfo.substituteBlockStateId, 0))
+          // (a place that failed takes its prediction back: no block in the client's world the server hasn't)
+          this._placeTask = this._placeTask.catch((err) => {
+            if (before != null) bot.world.setBlock(predicted, BlockInfo.PBlock.fromStateId(before.stateId, 0))
+            throw err
+          })
         }
 
         this._internalLock = false
