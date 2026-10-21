@@ -340,6 +340,18 @@ export abstract class Movement {
   }
 
   /**
+   * Whether the bot at `pos` stands on a block under a full one's height (a big dripleaf's leaf, a dirt path, soul sand,
+   * a chest), its feet under the top of a block placed beside its own at its feet's level less one: a bridge's place.
+   * Backed over the edge to place it, as a bridge's block is placed against the face under the bot, its box is in the
+   * placed block's cell, which vanilla's place refuses (BlockItem.canPlace: the player's box in the block's), and the
+   * executor's place failed 'Invalid placement' (a 1.21.11 bot on a big dripleaf, its feet at 10.9375, f9-1.21.11)
+   */
+  standsLow (pos: Vec3Properties): boolean {
+    const under = this.getBlockInfo(pos, 0, -1, 0)
+    return under.physical && under.height < Math.floor(pos.y) - 1e-6
+  }
+
+  /**
    * Returns if a block is safe or not
    * @param pos
    * @returns

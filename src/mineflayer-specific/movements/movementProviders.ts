@@ -72,6 +72,8 @@ export class Forward extends MovementProvider {
 
     if (!blockD.physical && !blockC.liquid) {
       if (start.remainingBlocks <= 0) return // not enough blocks to place
+      // (none from a block under a full one's height: the bot's box would be in the placed block's cell, standsLow)
+      if (this.standsLow(pos)) return
 
       // if (this.getNumEntitiesAt(blockD.position, 0, 0, 0) > 0) return // D intersects an entity hitbox
       if (!blockD.replaceable) {
@@ -132,6 +134,8 @@ export class Diagonal extends MovementProvider {
     const block1 = this.getBlockInfo(node, dir.x, 1, dir.z)
     const blockN1 = this.getBlockInfo(node, dir.x, -1, dir.z)
     if (!blockN1.physical && !block0.liquid) {
+      // (no bridge from a block under a full one's height: the bot's box would be in the placed block's cell, standsLow)
+      if (this.standsLow(node)) return
       const blockCheck0 = this.getBlockInfo(node, 0, -1, dir.z)
       const blockCheck1 = this.getBlockInfo(node, dir.x, -1, 0)
 
