@@ -468,6 +468,8 @@ export abstract class Movement {
       if (!block.additionalLoaded) block.loadAdditionalInfo(this)
       // TODO: Determine if there are other blocks holding the entity up
       if (block.fallBlockOver) return false
+      // nor beside sand or gravel with nothing under it, which the break's update drops (BlockInfo.fallBlockBeside)
+      if (block.fallBlockBeside) return false
       // if (this.getBlockInfo(block.position, 0, 1, 0).canFall) {
       //   // || (this.getNumEntitiesAt(block.position, 0, 1, 0) > 0)
       //   return false

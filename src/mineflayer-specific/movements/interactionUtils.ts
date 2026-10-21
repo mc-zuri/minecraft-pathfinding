@@ -550,6 +550,26 @@ export class PlaceHandler extends InteractHandler {
   }
 }
 
+/** ticks a break waits at most for falling blocks in its cell's column to land (waitForFallingBlocks) */
+export const FALLING_WAIT_TICKS = 60
+
+/** a falling block entity (FallingBlockEntity) in the cell at `pos` or over it within 4 blocks, its column's */
+export function fallingBlockOver (bot: Bot, pos: Vec3): boolean {
+  for (const e of Object.values(bot.entities ?? {})) {
+    if (e == null || (e.name !== 'falling_block' && (e as any).displayName !== 'Falling Block')) continue
+    const p = e.position
+    if (Math.floor(p.x) !== pos.x || Math.floor(p.z) !== pos.z) continue
+    const dy = Math.floor(p.y) - pos.y
+    if (dy >= 0 && dy <= 4) return true
+  }
+  return false
+}
+
+/** waits (FALLING_WAIT_TICKS at most) while a falling block is in the cell at `pos` or coming down into it */
+export async function waitForFallingBlocks (bot: Bot, pos: Vec3): Promise<void> {
+  for (let t = 0; t < FALLING_WAIT_TICKS && fallingBlockOver(bot, pos); t++) await bot.waitForTicks(1)
+}
+
 export class BreakHandler extends InteractHandler {
   static reach = 4
   /** digs of a block the server puts back each time (refused breaks) before the break fails */
@@ -658,6 +678,11 @@ export class BreakHandler extends InteractHandler {
         // change at a later tick, and a dig started first was the old item's on the server, an instant break of the
         // client's (shears on a leaf) that the server only started, and put the block back
         ;(bot as any)._ensureHasSentCarriedItem?.()
+
+        // a falling block (sand, gravel) in the cell or coming down into it is waited out, as Baritone waits on a
+        // FallingBlockEntity at the block it breaks: a dig started under it broke what it was to land on, or the
+        // block it became, and the bot walked into the fall
+        await waitForFallingBlocks(bot, this.vec)
 
         const gone =(b: Block | null): boolean => b != null && BlockInfo.replaceables.has(b.type)
         for (let tries = 1; ; tries++) {

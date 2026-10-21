@@ -55,6 +55,13 @@ export class BlockInfo {
     return this._waterAround
   }
 
+  /** a sand or gravel block beside it with nothing under it: one the break's update drops (loadAdditionalInfo) */
+  private _fallBlockBeside = false
+
+  public get fallBlockBeside (): boolean {
+    return this._fallBlockBeside
+  }
+
   public get fallBlockOver (): boolean {
     return this._fallBlockOver
   }
@@ -466,6 +473,18 @@ export class BlockInfo {
       if (movement.settings.dontMineUnderFallingBlock) {
         if (top.canFall) {
           this._fallBlockOver = true
+        }
+        // a sand or gravel beside it with nothing under it (FallingBlock.isFree: air, a liquid, a replaceable) falls
+        // at the break's update (FallingBlock.updateShape schedules its tick), into the hole or onto the bot: as
+        // Baritone's avoidAdjacentBreaking (avoidUpdatingFallingBlocks), the block isn't broken
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const side = movement.getBlockInfo(this.position, dx, 0, dz)
+          if (!side.canFall) continue
+          const under = movement.getBlockInfo(this.position, dx, -1, dz)
+          if (!under.physical || under.liquid || under.replaceable) {
+            this._fallBlockBeside = true
+            break
+          }
         }
       }
     }
