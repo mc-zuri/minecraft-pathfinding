@@ -250,6 +250,47 @@ export function standsOnForbidden (world: World, move: Move, pos: Vec3, startCel
 export class DropDownOpt extends MovementOptimizer {
   readonly mergeInteracts = false
 
+  /**
+   * Whether the bot, walking from `start`'s entry straight for `exit` as the merged move's executor steers it (looking
+   * at the exit, forward and sprint), stands in the exit's cell (or swims in it) without running into a block on the
+   * way (Entity.move's horizontalCollision), landing lower than the exit, or standing on a cell the step rules keep
+   * out of
+   */
+  walksStraightTo (start: Move, exit: Vec3, startCell: Vec3): boolean {
+    const ctx = EPhysicsCtx.FROM_BOT(this.bot.physicsUtil.engine, this.bot)
+    ctx.velocity.set(0, 0, 0)
+    ctx.position.set(start.entryPos.x, start.entryPos.y, start.entryPos.z)
+    stateLookAt(ctx.state, exit)
+    ctx.state.control = ControlStateHandler.DEFAULT()
+    ctx.state.control.forward = true
+    ctx.state.control.sprint = true
+    const cellX = Math.floor(exit.x)
+    const cellZ = Math.floor(exit.z)
+    let reached = false
+    this.sim.simulateUntil(
+      (state, ticks) => {
+        // (the first tick's state is the bot's own, not the walk's)
+        if (ticks === 0) return false
+        if (state.isCollidedHorizontally) return true
+        if (!state.onGround && !state.isInWater) return false
+        if (state.onGround && (state.pos.y < exit.y - 0.5 || standsOnForbidden(this.world, start, state.pos, startCell))) return true
+        // (a swimmer bobs under the exit's level)
+        const low = exit.y - (state.onGround ? 0.5 : 1)
+        if (Math.floor(state.pos.x) === cellX && Math.floor(state.pos.z) === cellZ && state.pos.y > low && state.pos.y < exit.y + 0.5) {
+          reached = true
+          return true
+        }
+        return false
+      },
+      () => {},
+      (state) => stateLookAt(state, exit),
+      ctx,
+      this.world,
+      1000
+    )
+    return reached
+  }
+
   identEndOpt (currentIndex: number, path: Move[]): number | Promise<number> {
     const startIndex = currentIndex
     let lastMove = path[currentIndex]
@@ -338,6 +379,16 @@ export class DropDownOpt extends MovementOptimizer {
 
       if (!good) {
         log(`[DropDownOpt] Index ${currentIndex}: Physics simulation failed to reach target safely.`)
+        return --currentIndex
+      }
+
+      // the merged move is one straight walk from the drop's start to this move's exit (its executor steers for the
+      // exit: postInitAlignToPath), not the moves' segments one by one, which the simulation above starts each from
+      // its own move's entry: a leaf at head height over the drop straight ahead, which the moves went round off the
+      // ledge to the side, was in the line's way, and the bot pushed into it till 'no progress in 60 ticks'
+      // (mineflayer-survival's e2e runs: 93 merged drops failed so pushing into leaves, 184 into other blocks)
+      if (!this.walksStraightTo(path[startIndex], nextMove.exitPos, startCell)) {
+        log(`[DropDownOpt] Index ${currentIndex}: the straight walk from the drop's start doesn't reach the exit.`)
         return --currentIndex
       }
 
