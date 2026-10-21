@@ -248,7 +248,14 @@ export class ForwardJump extends MovementProvider {
     }
 
     const block1 = this.getBlockInfo(pos, 0, -1, 0)
-    if (cHeight - block1.height > 1.2) return // Too high to jump
+    // the floor the jump goes up from: the ground under the node, or for a swimmer at the top of the water (the node's
+    // cell water, air over it) the cell's own floor: holding jump keeps it at the surface, and against a wall it is
+    // lifted out (LivingEntity.travel: horizontalCollision with room 0.6 up, a 0.3 rise), as a player climbs out of
+    // the water onto a block a block over its surface cell's floor. Over deep water (no ground under it) the jump out
+    // was never planned, and a 26.3 bot in a flooded hole had no way out but a dig through the ledge (fresh-z).
+    const surface = BlockInfo.waters.has(block0.type) && !this.getBlockInfo(pos, 0, 1, 0).liquid
+    const floor = surface ? Math.max(block1.height, Math.floor(pos.y)) : block1.height
+    if (cHeight - floor > 1.2) return // Too high to jump
 
     if ((cost += this.safeOrBreak(blockA, toBreak)) > COST_INF) return
     if ((cost += this.safeOrBreak(blockB, toBreak)) > COST_INF) return

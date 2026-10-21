@@ -231,7 +231,10 @@ export class ForwardJumpExecutor extends MovementExecutor {
 
   override async align (thisMove: Move, tickCount: number, goal: goals.Goal): Promise<boolean> {
     if (super.doWaterLogic()) {
-      this.bot.setControlState('jump', this.bot.entity.position.y < thisMove.entryPos.y)
+      // a swimmer holds jump up to the move's step, as a player at the surface does to climb out (LivingEntity.aiStep's
+      // jumpInLiquid, then jumpFromGround once the water under the feet is shallow): held only up to the move's start,
+      // the start of a jump out from the surface (the bot's own height), it bobbed under the ledge and never got out
+      this.bot.setControlState('jump', this.bot.entity.position.y < thisMove.exitPos.y)
     }
 
     return await super.align(thisMove, tickCount, goal)
