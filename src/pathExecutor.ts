@@ -4,7 +4,7 @@ import { Vec3 } from 'vec3'
 import { Path } from './mineflayer-specific/algs'
 import * as goals from './mineflayer-specific/goals'
 import { Move } from './mineflayer-specific/move'
-import { AbortError, CancelError, ManualResetError, ResetError } from './mineflayer-specific/exceptions'
+import { AbortError, CancelError, ManualResetError, PathfinderSinkingError, ResetError } from './mineflayer-specific/exceptions'
 import type {
   BuildableMoveProvider,
   ExecutorMap,
@@ -331,6 +331,16 @@ export class PathExecutor {
       bot.emit('pathfinderMoveFailed', info)
     }
 
+    // A move that fails 'too low' with the bot in the water (sinking under the move it was to swim) ends goto at once
+    // (PathfinderSinkingError, the keys let go), for the caller to take the bot up for air: a search from the bot
+    // sinking on planned the same again, each move failing a block or two lower, and a 1.21.11 bot in a kelp sea
+    // failed 6 moves in a row from y 62 down to 54 and drowned (f1-grim, t108690)
+    const handBackIfSinking = (err: CancelError): void => {
+      if (!/too low/i.test(err.message) || (bot.entity as any).isInWater !== true) return
+      bot.clearControlStates()
+      this.host.handBack(new PathfinderSinkingError(bot.entity.position.clone(), err.message))
+    }
+
     const scheduleRecovery = (rawMove: Move): void => {
       if (recoveryInFlight) return
       recoveryInFlight = true
@@ -382,6 +392,7 @@ export class PathExecutor {
         }
 
         moveFailed(err)
+        handBackIfSinking(err)
         await finish()
         return
       }
@@ -658,6 +669,7 @@ export class PathExecutor {
           }
 
           moveFailed(err)
+          handBackIfSinking(err)
           await finish()
           return
         }

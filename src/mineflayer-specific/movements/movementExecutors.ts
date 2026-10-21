@@ -830,7 +830,10 @@ export class StraightUpExecutor extends MovementExecutor {
   }
 
   performPerTick (thisMove: Move, tickCount: number, currentIndex: number, path: Move[]): boolean | Promise<boolean> {
-    if (this.bot.entity.position.y < thisMove.entryPos.y) {
+    // under the start's cell: the start's own height is where the bot was as the search began, and a swimmer sinks a
+    // hair under it before its jump (jumpInLiquid) takes it up: a 1.21.11 bot in the sea failed its StraightUp the
+    // tick after it started, again and again as it sank (f1-grim)
+    if (this.bot.entity.position.y < Math.floor(thisMove.entryPos.y + 1e-6)) {
       throw new CancelError('StraightUp: too low')
     }
 

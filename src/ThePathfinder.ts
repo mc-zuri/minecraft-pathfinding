@@ -149,6 +149,20 @@ export class ThePathfinder {
    */
   private gotoCancelled = false
 
+  /** the error goto ends with once its walk is over (handBack: a move failed 'too low' in the water) */
+  private gotoError?: Error
+
+  /**
+   * Ends the goto under way as a cancel does (no further search or walk), its promise rejecting with `err` once it's
+   * over: the walk's hand-back of a failure no search fixes (PathfinderSinkingError)
+   */
+  public handBack (err: Error): void {
+    if (!this.isPathing) return
+    this.gotoError ??= err
+    this.gotoCancelled = true
+    this.abortCalculation = true
+  }
+
   private currentGotoGoal?: goals.Goal
   private _currentProducer?: PathProducer
   private readonly executionRunner: PathExecutor
@@ -726,6 +740,7 @@ export class ThePathfinder {
     delete this.moveFailureAt
     this.failedMoves.clear()
     delete this.lastSearch
+    delete this.gotoError
     this.executeTask = new Task()
     this.currentGotoGoal = goal
     this.bot.emit('goalSet', goal)
@@ -739,6 +754,9 @@ export class ThePathfinder {
       delete this._gotoMappings
       this.executeTask.finish()
     }
+    const handedBack = this.gotoError
+    delete this.gotoError
+    if (handedBack != null) throw handedBack
   }
 
   private async _goto (goal: goals.Goal, performOpts: PerformOpts = {}): Promise<void> {

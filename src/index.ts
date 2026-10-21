@@ -77,3 +77,5 @@ export type { MismatchClass, TickSample, DiagEvent, Mismatch } from './diagnosti
 
 export { EdgeGuard, predictEdgeFall, landingUnder, onFootOnGround } from './mineflayer-specific/edgeGuard'
 export type { EdgeFall, EdgeGuardOptions } from './mineflayer-specific/edgeGuard'
+
+export { PathfinderSinkingError } from './mineflayer-specific/exceptions'

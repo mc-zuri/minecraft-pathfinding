@@ -41,3 +41,16 @@ export class TickAdvanceError extends Error {
     this.name = 'TickAdvanceError'
   }
 }
+
+/**
+ * goto's end when a move fails 'too low' with the bot in the water (sinking under the move it was to swim): the walk
+ * hands back at once, not searching again from under the water, for the caller to take the bot up for air (a
+ * surface, a swim to shore). `code` is 'PATHFINDER_SINKING'; `pos` where the bot was, `moveError` the move's failure.
+ */
+export class PathfinderSinkingError extends Error {
+  public readonly code = 'PATHFINDER_SINKING'
+  constructor (public readonly pos: import('vec3').Vec3, public readonly moveError: string) {
+    super(`Goto: the bot sank under its move in the water at ${pos.toString()} (${moveError})`)
+    this.name = 'PathfinderSinkingError'
+  }
+}
