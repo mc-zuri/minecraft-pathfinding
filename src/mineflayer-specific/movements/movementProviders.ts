@@ -456,15 +456,20 @@ export class StraightUp extends MovementProvider {
 
     if (block1.isInvalid) return // out of range.
 
-    // Climbing a ladder/vine has its own speed; otherwise we jump (and below we
-    // may also place a block to tower up, which adds its own place cost).
-    let cost = block1.climbable ? LADDER_UP_ONE_COST : JUMP_ONE_BLOCK_COST + this.settings.jumpCost
-
-    if (block1.liquid) cost += this.settings.liquidCost
-    // if (this.getNumEntitiesAt(node, 0, 0, 0) > 0) return // an entity (besides the player) is blocking the building area
-
     const block2 = this.getBlockInfo(node, 0, 2, 0)
     const block3 = this.getBlockInfo(node, 0, 1, 0) // the block the bot ends up standing in
+
+    // a column of water the bot is in (the start's cell, the next and the one over it all water) is swum up as a
+    // ladder is climbed (Baritone's MovementPillar: an ascending pillar of water costs a ladder's climb), the head
+    // under water on the way to the top
+    const waterColumn = block1.liquid && block3.liquid && block2.liquid
+
+    // Climbing a ladder/vine has its own speed; otherwise we jump (and below we
+    // may also place a block to tower up, which adds its own place cost).
+    let cost = block1.climbable || waterColumn ? LADDER_UP_ONE_COST : JUMP_ONE_BLOCK_COST + this.settings.jumpCost
+
+    if (block1.liquid && !waterColumn) cost += this.settings.liquidCost
+    // if (this.getNumEntitiesAt(node, 0, 0, 0) > 0) return // an entity (besides the player) is blocking the building area
 
     const toBreak: BreakHandler[] = []
     const toPlace: PlaceHandler[] = []
@@ -490,7 +495,7 @@ export class StraightUp extends MovementProvider {
     }
 
     // Exclusion zones and deadly edges (standCost): block3 is where the bot's feet end up.
-    if ((cost += this.standCost(block3)) > COST_INF) return
+    if ((cost += this.standCost(block3, { waterColumn })) > COST_INF) return
 
     neighbors.push(Move.fromPrevious(cost, block1.position.offset(0.5, 1, 0.5), node, this, toPlace, toBreak))
   }

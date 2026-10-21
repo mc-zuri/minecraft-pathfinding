@@ -364,11 +364,55 @@ export abstract class Movement {
   }
 
   /**
-   * Extra cost of ending a move in this block: the step exclusion areas (exclusionStep) and its deadly edges
-   * (edgeHazard)
+   * Extra cost of ending a move in this block: the step exclusion areas (exclusionStep), its deadly edges
+   * (edgeHazard), and COST_INF for a cell of water the bot can't keep in (waterUnstandable) unless the move is the
+   * climb of a water column it is in (`waterColumn`: StraightUp's)
    */
-  standCost (block: BlockInfo): number {
+  standCost (block: BlockInfo, opts: { waterColumn?: boolean } = {}): number {
+    if (opts.waterColumn !== true && this.waterUnstandable(block)) return COST_INF
     return this.exclusionStep(block) + this.edgeHazard(block)
+  }
+
+  /**
+   * The level of the fluid in a liquid cell (FlowingFluid's LEVEL: 0 a source, 1 to 7 flowing, 8 and up falling); 0
+   * for a waterlogged block, and for a liquid cell whose state says none (a source's); null for no liquid
+   */
+  fluidLevel (block: BlockInfo): number | null {
+    if (!block.liquid) return null
+    let level: unknown
+    try {
+      level = (block.block as any)?.getProperties?.()?.level
+    } catch {}
+    const n = typeof level === 'number' ? level : typeof level === 'string' ? Number(level) : 0
+    return Number.isFinite(n) ? n : 0
+  }
+
+  /**
+   * Whether a liquid cell is flowing: its own fluid not a full block's (a level 1 to 7), or beside a cell that is
+   * (a full cell next to a partial flow: the current pushes the bot off), as Baritone's isFlowing has it
+   */
+  isFlowing (block: BlockInfo): boolean {
+    const partial = (b: BlockInfo): boolean => {
+      const level = this.fluidLevel(b)
+      return level != null && level >= 1 && level <= 7
+    }
+    if (!block.liquid) return false
+    if (partial(block)) return true
+    for (const dir of Movement.cardinalDirs) {
+      if (partial(this.getBlockInfo(block.position, dir.x, 0, dir.z))) return true
+    }
+    return false
+  }
+
+  /**
+   * Whether a move may not end with the feet in this cell for its water: the feet's cell or the head's flowing
+   * (isFlowing), or the head's cell water too (the head under water: a swimmer's node is the water's top cell, where
+   * it can breathe and its jump keeps it). Baritone's canWalkThrough takes water only so: still, with no fluid over it.
+   */
+  waterUnstandable (feet: BlockInfo): boolean {
+    const head = this.getBlockInfo(feet.position, 0, 1, 0)
+    if (feet.liquid && (head.liquid || this.isFlowing(feet))) return true
+    return head.liquid && this.isFlowing(head)
   }
 
   /**
