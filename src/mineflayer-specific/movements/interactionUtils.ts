@@ -92,6 +92,11 @@ export abstract class InteractHandler {
     return this.performing
   }
 
+  /** the interaction under way was given up on (abort: its task canceled) */
+  protected get aborted (): boolean {
+    return this.task?.canceled === true
+  }
+
   public get done (): boolean {
     return this._done
   }
@@ -392,6 +397,8 @@ export class PlaceHandler extends InteractHandler {
 
         logPlace(`Looking at ${this.vec} to place water.`)
         await bot.lookAt(this.vec, this.settings.forceLook)
+        // (given up on while it turned: nothing used)
+        if (this.aborted) return
         bot.activateItem(this.offhand)
         logPlace('Water placed.')
         break
@@ -422,6 +429,7 @@ export class PlaceHandler extends InteractHandler {
         while (works.raycasts.length === 0) {
           waitTicks++
           await bot.waitForTicks(1)
+          if (this.aborted) return
           works = await this.performInfo(bot)
         }
         if (waitTicks > 0) logPlace(`Waited ${waitTicks} ticks for valid raycast intersections.`)
@@ -472,6 +480,7 @@ export class PlaceHandler extends InteractHandler {
           }
           logPlace(`Simulating tick ${i}/${works.ticks} before placement. Current position: ${state.pos}, Ray intersect: ${rayRes.intersect}, Test check position: ${testCheck.position}, Test check face: ${testCheck.face}`)
           await bot.waitForTicks(1)
+          if (this.aborted) return
         }
 
         const botBB = AABBUtils.getEntityAABBRaw({ position: bot.entity.position, width: 0.6, height: 1.8 })
@@ -490,6 +499,12 @@ export class PlaceHandler extends InteractHandler {
         }
 
         const direction = faceToVec(rayRes.face)
+
+        // a place given up on while it waited (the walk reset: a block update near the path, the move failed) sends
+        // nothing: the next path's own place of the cell is under way already. It went on and placed, the next path's
+        // place in the same tick clicked the cell this one's prediction filled and failed 'No block has been placed : the
+        // block is still dirt' (a pillar's StraightUp reset by the snow over the block it dug, f9-26.3)
+        if (this.aborted) return
 
         logPlace(`Calling bot._placeBlockWithOptions at face ${rayRes.face}`)
         const predicted = rayRes.position.plus(direction)
