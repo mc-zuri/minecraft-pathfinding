@@ -22,6 +22,8 @@ const debug = require('debug')
 
 /** ticks a dig's promise gets to answer once its block is gone */
 const DIG_ANSWER_TICKS = 20
+/** ticks a break the client predicted waits at most for the server's acknowledgement (5 s: a lost one isn't waited on for good) */
+export const PREDICTION_ANSWER_TICKS = 100
 const logBase = debug('minecraft-pathfinding:InteractHandler')
 const logPlace = debug('minecraft-pathfinding:PlaceHandler')
 const logBreak = debug('minecraft-pathfinding:BreakHandler')
@@ -583,6 +585,19 @@ export class BreakHandler extends InteractHandler {
    * false as soon as it is there (back, or never broken)
    */
   private async staysGone (bot: Bot, gone: (b: Block | null) => boolean, settled?: Promise<unknown>): Promise<boolean> {
+    // From 1.19 a break the client made is its own prediction till the server acknowledges the dig's sequence
+    // (BlockStatePredictionHandler: mineflayer's _isBlockPredicted), the server's block put back then if it refused:
+    // the server's answer is waited for, not the settle's ticks alone. With a ping over the settle's two ticks a
+    // refused break (spawn protection, a claim) was taken for done, the leaf back after the move went on, and the
+    // bot pushed into it till 'no progress' and planned the same break again
+    const predicted = (bot as any)._isBlockPredicted as ((pos: Vec3) => boolean) | undefined
+    if (typeof predicted === 'function') {
+      for (let ticks = 0; predicted(this.vec) && ticks < PREDICTION_ANSWER_TICKS; ticks++) {
+        if (!gone(bot.blockAt(this.vec) as unknown as Block | null)) return false
+        await bot.waitForTicks(1)
+      }
+      if (!gone(bot.blockAt(this.vec) as unknown as Block | null)) return false
+    }
     let done = false
     settled?.then(() => { done = true }, () => {})
     await Promise.resolve()

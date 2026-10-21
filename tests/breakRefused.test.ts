@@ -119,3 +119,64 @@ for (const version of ['26.3', '1.21.11']) {
     }
   })
 }
+
+/**
+ * The bot's first `refusals` digs are breaks the client predicts that the server answers `answerTicks` ticks later (a
+ * ping of answerTicks / 2 ticks each way): till then the block is a prediction (mineflayer's _isBlockPredicted), then
+ * the server's block, put back for a refused one, air for one it broke
+ */
+function lateAnswers (bot: any, refusals: number, answerTicks: number): { digs: () => number } {
+  const world = bot.world
+  const pending = new Set<string>()
+  bot._isBlockPredicted = (pos: Vec3) => pending.has(pos.floored().toString())
+  let digs = 0
+  bot.dig = async (block: any) => {
+    digs++
+    const pos = block.position.clone()
+    const stateId = block.stateId
+    const refused = digs <= refusals
+    world.setBlock(pos, 'air')
+    pending.add(pos.toString())
+    bot.emit('diggingCompleted', bot.blockAt(pos))
+    void bot.waitForTicks(answerTicks).then(() => {
+      pending.delete(pos.toString())
+      if (refused) world.setBlock(pos, stateId)
+    })
+  }
+  return { digs: () => digs }
+}
+
+for (const version of ['26.3', '1.21.11', '1.20.4']) {
+  for (const [refusals, what] of [[1, 'the first refused'], [0, 'none refused'], [Infinity, 'every one refused']] as Array<[number, string]>) {
+    test(`${version}: a break is done once the server's acknowledgement 6 ticks later leaves it gone, not after the settle's 2 ticks (${what})`, async () => {
+      const rig = createCacheWorld(version, 64, new Vec3(0.5, 64, 0.5)).rig
+      rig.bot.loadPlugin(createPlugin())
+      const bot: any = rig.bot
+      const pos = new Vec3(1, 65, 0)
+      bot.world.setBlock(pos, 'oak_leaves')
+      bot.entity.position = new Vec3(0.5, 64, 0.5)
+      bot.entity.onGround = true
+      try {
+        const { digs } = lateAnswers(bot, refusals, 6)
+        const handler = BreakHandler.fromVec(pos, 'solid')
+        const move: any = { entryPos: new Vec3(0.5, 64, 0.5), exitPos: new Vec3(1.5, 65, 0.5), toPlace: [], toBreak: [handler] }
+        const executor = new NewForwardJumpExecutor(bot, bot.pathfinder.world, bot.pathfinder.defaultMoveSettings)
+        executor.loadMove(move)
+        if (refusals === Infinity) {
+          await assert.rejects(withTimeout(executor.performInteraction(handler), 8000, 'the break never ended'), /came back/)
+          assert.equal(digs(), BreakHandler.DIG_TRIES)
+          await bot.waitForTicks(8)
+          assert.equal(bot.blockAt(pos).name, 'oak_leaves')
+          return
+        }
+        await withTimeout(executor.performInteraction(handler), 8000, 'the break never ended')
+        // the break taken for done: the leaf stays gone (before: back 4 ticks after the move went on)
+        await bot.waitForTicks(8)
+        assert.equal(bot.blockAt(pos).name, 'air')
+        assert.equal(digs(), refusals + 1)
+      } finally {
+        rig.stopPassivePhysics()
+      }
+    })
+  }
+}
